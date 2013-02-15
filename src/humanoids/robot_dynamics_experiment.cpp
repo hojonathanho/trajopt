@@ -7,6 +7,9 @@
 #include <openrave-core.h>
 #include "ipi/sco/optimizers.hpp"
 #include "trajopt/utils.hpp"
+#include "utils/vector_ops.hpp"
+#include "utils/eigen_conversions.hpp"
+#include "utils/stl_to_string.hpp"
 using namespace ipi::sco;
 using namespace trajopt;
 using namespace util;
@@ -127,14 +130,14 @@ public:
   }
 };
 
-struct DynErrCalc {
+struct DynErrCalc : public VectorOfVector {
 
   RobotAndDOFPtr m_rad;
   VarVector m_x, m_v, m_a, m_tq;
   int m_ndof;
   DynErrCalc(const RobotAndDOFPtr& rad) : m_rad(rad), m_ndof(rad->GetDOF()) {}
 
-  VectorXd operator()(const VectorXd& all) {
+  VectorXd operator()(const VectorXd& all) const {
     VectorXd x = all.middleRows(0, m_ndof);
     VectorXd v = all.middleRows(m_ndof, m_ndof);
     VectorXd a = all.middleRows(2*m_ndof, m_ndof);
@@ -156,7 +159,7 @@ int main(int argc, char* argv[]) {
   RaveInitialize(true);
   EnvironmentBasePtr env = RaveCreateEnvironment();
 //  env->Load("/Users/joschu/Proj/drc/gfe.xml");
-  env->Load("/Users/joschu/Desktop/puma.robot.xml");
+  env->Load("robots/puma.robot.xml");
   vector<RobotBasePtr> robots; env->GetRobots(robots);
   RobotBasePtr gfe = robots[0];
   RobotAndDOFPtr rad(new RobotAndDOF(gfe, gfe->GetManipulators()[0]->GetArmIndices()));
@@ -174,7 +177,8 @@ int main(int argc, char* argv[]) {
     for (int j=0; j < n_dof; ++j) vars.push_back(v(i,j));
     for (int j=0; j < n_dof; ++j) vars.push_back(a(i,j));
     for (int j=0; j < n_dof; ++j) vars.push_back(tq(i,j));
-    prob->addCost(CostPtr(new CostFromNumDiffErr(DynErrCalc(rad), vars, VectorXd::Ones(n_dof), ABS,
+    VectorOfVectorPtr asdf(new DynErrCalc(rad));
+    prob->addCost(CostPtr(new CostFromNumDiffErr(asdf, vars, VectorXd::Ones(n_dof), ABS,
         (boost::format("dyn_err%i")%i).str())));
   }
 

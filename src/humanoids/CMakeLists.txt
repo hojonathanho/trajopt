@@ -7,8 +7,8 @@ include_directories(
 )
 
 
-#add_executable(robot_dynamics_experiment robot_dynamics_experiment.cpp)
-#target_link_libraries(robot_dynamics_experiment sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_THREAD_LIBRARY} ${OpenRAVE_BOTH_LIBRARIES})
+add_executable(robot_dynamics_experiment robot_dynamics_experiment.cpp)
+target_link_libraries(robot_dynamics_experiment sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_THREAD_LIBRARY} ${OpenRAVE_BOTH_LIBRARIES})
 
 add_library(humanoids humanoids.cpp hull2d.cpp)
 target_link_libraries(humanoids sco trajopt ${OpenRAVE_BOTH_LIBRARIES})

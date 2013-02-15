@@ -19,13 +19,8 @@ def create_box_from_bounds(env, bounds, name="box"):
 """%( name,
       (xmin+xmax)/2, (ymin+ymax)/2, (zmin+zmax)/2,
       (xmax-xmin)/2, (ymax-ymin)/2, (zmax-zmin)/2 )
-  
-  
-  fname = "/tmp/%s.xml"%name
-  with open(fname,"w") as fh:
-    fh.write(xml_str)
-      
-  return env.Load(fname)
+
+  return env.LoadData(xml_str)
 
 def create_cylinder(env, center, radius, height, name = "cylinder"):
   xcenter, ycenter, zcenter = center
@@ -46,12 +41,8 @@ def create_cylinder(env, center, radius, height, name = "cylinder"):
 """%( name,
       xcenter, ycenter, zcenter,
       radius, height )
-  
-  fname = "/tmp/%s.xml"%name
-  with open(fname,"w") as fh:
-    fh.write(xml_str)
-      
-  return env.Load(fname)
+
+  return env.LoadData(xml_str)
 
 def create_mesh_box(env, center, half_extents, name="box"):
     box = rave.RaveCreateKinBody(env, '')
@@ -85,4 +76,3 @@ def create_mesh_box(env, center, half_extents, name="box"):
     box.SetTransform(trans)
     env.Add(box)
     return box
-
