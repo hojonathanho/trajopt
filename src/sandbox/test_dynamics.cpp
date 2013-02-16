@@ -19,16 +19,19 @@ using namespace std;
 static const double GRAVITY = -9.8;
 static const double TABLE_HEIGHT = 0.0; // DO NOT CHANGE (complementarity)
 
+typedef Eigen::Matrix<double, 1, 1> Vector1d;
+inline Vector1d makeVector1d(double x) { Vector1d v; v(0) = x; return v; }
+
 /*
 struct ComplErrCalc : public VectorOfVector {
   vector<ScalarOfVectorPtr> m_terms;
   ComplErrCalc(const vector<ScalarOfVectorPtr> &terms) : m_terms(terms) { }
   VectorXd operator()(const VectorXd &vals) const {
-    VectorXd out(1);
+    double x = 1;
     for (int i = 0; i < m_terms.size(); ++i) {
-      out(0) *= m_terms[i]->call(vals);
+      x *= m_terms[i]->call(vals);
     }
-    return out;
+    return makeVector1d(x);
   }
 };
 
@@ -36,14 +39,24 @@ struct ComplConstraint : public ConstraintFromNumDiff {
   ComplConstraint(const vector<ScalarOfVectorPtr> &terms, const VarVector &vars, const string &name="ComplConstraint") :
     ConstraintFromNumDiff(VectorOfVectorPtr(new ComplErrCalc(terms)), vars, EQ, name) { }
 };
-*/
+
+ConstraintPtr MakeBoxGroundConstraint(VarVector &x, VarVector &ground_force, int i, const string &name) {
+  int z = i + 2;
+  VarVector vars;
+  vars.push_back(ground_force(i,2));
+  vars.push_back(x(z,2));
+  vector<ScalarOfVectorPtr> &terms;
+  terms.push_back(ScalarOfVectorPtr());
+  terms.push_back(ScalarOfVectorPtr());
+  ConstraintPtr cnt(new ComplConstraint(terms, vars, name));
+  return cnt;
+}*/
+
 
 struct ComplErrCalc : public VectorOfVector {
   VectorXd operator()(const VectorXd& vals) const {
-    VectorXd out(1);
     //out(0) = vals.norm() - vals.lpNorm<1>();
-    out(0) = vals.prod();
-    return out;
+    return makeVector1d(vals.prod());
   }
 };
 
@@ -71,6 +84,7 @@ void SetViewer(EnvironmentBasePtr penv, const string& viewername) {
   bool showgui = true;
   viewer->main(showgui);
 }
+
 void MakeVariablesAndBounds(int n_steps, double dt, OptProb& prob_out, VarArray &x, VarArray &v, VarArray &a, VarArray &ground_force, const Vector3d &init_x, const Vector3d &init_v, DblVec &out_initSoln) {
   //const int n_dof = 6; // pos rot
   const int n_dof = 3; // x y z
@@ -189,6 +203,18 @@ void MakeVariablesAndBounds(int n_steps, double dt, OptProb& prob_out, VarArray 
 }
 
 
+
+class ZeroCost : public Cost {
+  ConvexObjectivePtr convex(const DblVec&, Model* model) {
+    ConvexObjectivePtr out(new ConvexObjective(model));
+    out->addAffExpr(AffExpr());
+    return out;
+  }
+  double value(const DblVec& x) {
+    return 0.;
+  }
+};
+
 int main(int argc, char* argv[]) {
   OptProbPtr prob(new OptProb());
   int n_steps = 100;
@@ -197,9 +223,10 @@ int main(int argc, char* argv[]) {
   VarArray x, v, a, ground_force;
   DblVec initSoln;
   MakeVariablesAndBounds(n_steps, dt, *prob, x, v, a, ground_force, init_x, init_v, initSoln);
-  srand(time(NULL));
-  for (int i = 0; i < initSoln.size(); ++i) initSoln[i] += 0.01*((double)rand()/RAND_MAX-.5);
-  for (int i = 0; i < initSoln.size(); ++i) cout << initSoln[i] << ' '; cout << endl;
+  //srand(time(NULL));
+  //for (int i = 0; i < initSoln.size(); ++i) initSoln[i] += 0.01*((double)rand()/RAND_MAX-.5);
+  //for (int i = 0; i < initSoln.size(); ++i) cout << initSoln[i] << ' '; cout << endl;
+  prob->addCost(CostPtr(new ZeroCost())); // shut up
   BasicTrustRegionSQP optimizer(prob);
   optimizer.min_trust_box_size_ = 1e-7;
   optimizer.min_approx_improve_= 1e-7;

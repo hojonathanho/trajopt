@@ -33,6 +33,10 @@ struct BasicArray {
   int cols() const {
     return m_nCol;
   }
+  int size() const {
+    return m_nRow * m_nCol;
+  }
+
   BasicArray block(int startRow, int startCol, int nRow, int nCol) const {
     BasicArray out;
     out.resize(nRow, nCol);
