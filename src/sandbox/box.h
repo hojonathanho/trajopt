@@ -12,9 +12,12 @@
 #include <Eigen/Geometry>
 #include "trajopt/typedefs.hpp"
 
+#include <iostream>
+
 namespace trajopt {
 namespace dynamics {
 
+using namespace std;
 using namespace Eigen;
 
 class DynamicsProblem : public OptProb {
@@ -82,17 +85,79 @@ struct BoxProperties {
   Matrix3d Ibodyinv;
 };
 
+struct ContactTrajVars {
+  VarArray p; // contact point, in some object's local frame
+  VarArray f; // contact force
+
+  ContactTrajVars(int timesteps) {
+    p.resize(timesteps, 3);
+    f.resize(timesteps, 3);
+  }
+};
+//typedef boost::shared_ptr<ContactTrajVars> ContactTrajVarsPtr;
+
+
+// box state at single timestep
+struct GroundBoxContactState {
+  static int Dim() { return 6; }
+};
+struct GroundBoxContact {
+  DynamicsProblemPtr m_prob;
+  ContactTrajVars m_trajvars;
+
+  GroundBoxContact(DynamicsProblemPtr prob) : m_prob(prob), m_trajvars(prob->n_timesteps) { }
+
+  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="ground_box_contact") {
+    for (int t = 0; t < m_prob->n_timesteps; ++t) {
+      for (int i = 0; i < 3; ++i) {
+        out_names.push_back((boost::format("%s_p_%i_%i") % name_prefix % t % i).str());
+        out_vlower.push_back(-INFINITY);
+        out_vupper.push_back(INFINITY);
+      }
+      for (int i = 0; i < 3; ++i) {
+        out_names.push_back((boost::format("%s_f_%i_%i") % name_prefix % t % i).str());
+        out_vlower.push_back(-INFINITY);
+        out_vupper.push_back(INFINITY);
+      }
+    }
+  }
+
+  int setVariables(const vector<Var> &vars, int start_pos) {
+    int k = start_pos;
+    for (int t = 0; t < m_prob->n_timesteps; ++t) {
+      for (int i = 0; i < 3; ++i) {
+        m_trajvars.p(t,i) = vars[k++];
+      }
+      for (int i = 0; i < 3; ++i) {
+        m_trajvars.f(t,i) = vars[k++];
+      }
+    }
+    assert(k - start_pos == m_prob->n_timesteps*GroundBoxContactState::Dim());
+    return k;
+  }
+};
+typedef boost::shared_ptr<GroundBoxContact> GroundBoxContactPtr;
+
 class Box {
 public:
   // constants
   BoxProperties m_props;
 
+  DynamicsProblemPtr m_prob;
+
   // traj variables for optimization
   BoxStateTrajVars m_trajvars;
-  DynamicsProblemPtr m_prob;
   BoxState m_init_state;
 
   Box(DynamicsProblemPtr prob, const BoxProperties &props, const BoxState &init_state) : m_prob(prob), m_props(props), m_trajvars(prob->n_timesteps), m_init_state(init_state) { }
+
+  // ground hack for now
+  vector<GroundBoxContactPtr> m_ground_conts;
+
+  void registerGroundContact() {
+    GroundBoxContactPtr ctv(new GroundBoxContact(m_prob));
+    m_ground_conts.push_back(ctv);
+  }
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box") {
     int init_size = out_names.size();
@@ -128,7 +193,12 @@ public:
         out_vupper.push_back(INFINITY);
       }
     }
-    assert(out_names.size() - init_size == m_prob->n_timesteps*BoxState::Dim());
+
+    for (int z = 0; z < m_ground_conts.size(); ++z) {
+      m_ground_conts[z]->fillVarNamesAndBounds(out_names, out_vlower, out_vupper, (boost::format("%s_contact_%d") % name_prefix % z).str());
+    }
+
+    assert(out_names.size() - init_size == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*GroundBoxContactState::Dim()));
   }
 
   int setVariables(const vector<Var> &vars, int start_pos) {
@@ -153,11 +223,19 @@ public:
         m_trajvars.torque(t,i) = vars[k++];
       }
     }
-    assert(k - start_pos == m_prob->n_timesteps*BoxState::Dim());
+    for (int z = 0; z < m_ground_conts.size(); ++z) {
+      k = m_ground_conts[z]->setVariables(vars, k);
+    }
+    cout << k - start_pos << endl;
+    cout << m_prob->n_timesteps << endl;
+    cout << BoxState::Dim() << endl;
+    cout << m_ground_conts.size() << endl;
+    cout << GroundBoxContactState::Dim() << endl;
+    assert(k - start_pos == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*GroundBoxContactState::Dim()));
     return k;
   }
 
-  void addConstraintsToProb() {
+  void applyConstraints() {
     ModelPtr model = m_prob->getModel();
     double dt = m_prob->dt;
     // initial conditions
@@ -177,6 +255,10 @@ public:
       for (int i = 0; i < 3; ++i) {
         AffExpr force_i;
         force_i.constant += m_prob->gravity(i);
+        // force from ground contacts
+        for (int z = 0; z < m_ground_conts.size(); ++z) {
+          force_i = force_i + m_ground_conts[z]->m_trajvars.f(t,i);
+        }
         // TODO: add other forces here
         model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_i, "");
       }
@@ -194,8 +276,26 @@ public:
 
 private:
 };
-
 typedef boost::shared_ptr<Box> BoxPtr;
+
+#if 0
+class BoxGroundConstraint {
+public:
+  DynamicsProblemPtr m_prob;
+  Box m_box;
+  double m_ground_z;
+
+  GroundConstraint(DynamicsProblemPtr prob, double ground_z, BoxPtr box) : m_prob(prob), m_ground_z(ground_z), m_box(box) {
+
+  }
+
+  void applyConstraints() {
+
+  }
+
+};
+typedef boost::shared_ptr<BoxGroundConstraint> BoxGroundConstraintPtr;
+#endif
 
 } // namespace dynamics
 } // namespace trajopt

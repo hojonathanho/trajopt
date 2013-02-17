@@ -79,8 +79,10 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
   props.Ibody = props.Ibodyinv = Eigen::Matrix3d::Identity();
 
   for (int i = 0; i < n_objects; ++i) {
-    out_objects.push_back(dynamics::BoxPtr(new dynamics::Box(prob, props, init_states[i])));
-    out_objects[i]->fillVarNamesAndBounds(names, vlower, vupper);
+    dynamics::BoxPtr box(new dynamics::Box(prob, props, init_states[i]));
+    box->registerGroundContact();
+    box->fillVarNamesAndBounds(names, vlower, vupper);
+    out_objects.push_back(box);
   }
   assert(names.size() == vlower.size() && names.size() == vupper.size());
 
@@ -96,7 +98,7 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
   cout << Str(names) << endl;
 
   for (int i = 0; i < n_objects; ++i) {
-    out_objects[i]->addConstraintsToProb();
+    out_objects[i]->applyConstraints();
   }
 }
 
@@ -106,7 +108,7 @@ class ZeroCost : public Cost {
     out->addAffExpr(AffExpr());
     return out;
   }
-  double value(const DblVec& x) {
+  double value(const DblVec&) {
     return 0.;
   }
 };
@@ -144,7 +146,8 @@ int main(int argc, char* argv[]) {
   cout << "x:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.x) << endl;
   cout << "v:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.p) << endl;
   cout << "a:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.force) << endl;
-  //cout << "gf:\n" << getTraj(optimizer.x(), ground_force) << endl;
+  cout << "gp:\n" << getTraj(optimizer.x(), objects[0]->m_ground_conts[0]->m_trajvars.p) << endl;
+  cout << "gf:\n" << getTraj(optimizer.x(), objects[0]->m_ground_conts[0]->m_trajvars.f) << endl;
 
 //  boost::thread run_traj(RunTraj, result, env, *rad);
 //  ViewerBasePtr viewer = RaveCreateViewer(env,"qtosg");
