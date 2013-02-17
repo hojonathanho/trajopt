@@ -2,8 +2,6 @@
 #include "trajopt/collision_checker.hpp"
 #include "trajopt/problem_description.hpp"
 #include "osgviewer/osgviewer.hpp"
-#include <stdexcept>
-#include <boost/python/exception_translator.hpp>
 #include <boost/foreach.hpp>
 
 using namespace trajopt;
@@ -15,13 +13,30 @@ namespace py = boost::python;
 
 namespace {
 bool gInteractive = true;
-
+py::object openravepy;
 
 py::list toPyList(const IntVec& x) {
   py::list out;
   for (int i=0; i < x.size(); ++i) out.append(x[i]);
   return out;
 }
+
+
+EnvironmentBasePtr GetCppEnv(py::object py_env) {
+  int id = py::extract<int>(openravepy.attr("RaveGetEnvironmentId")(py_env));
+  EnvironmentBasePtr cpp_env = RaveGetEnvironment(id);
+  return cpp_env;
+}
+KinBodyPtr GetCppKinBody(py::object py_kb, EnvironmentBasePtr env) {
+  int id = py::extract<int>(py_kb.attr("GetEnvironmentId")());
+  return env->GetBodyFromEnvironmentId(id);
+}
+KinBody::LinkPtr GetCppLink(py::object py_link, EnvironmentBasePtr env) {
+  KinBodyPtr parent = GetCppKinBody(py_link.attr("GetParent")(), env);
+  int idx = py::extract<int>(py_link.attr("GetIndex")());
+  return parent->GetLinks()[idx];
+}
+
 
 }
 
@@ -32,6 +47,9 @@ public:
   py::list GetDOFIndices() {
     vector<int> inds = m_prob->GetRAD()->GetJointIndices();
     return toPyList(inds);
+  }
+  void SetRobotActiveDOFs() {
+    m_prob->GetRAD()->SetRobotActiveDOFs();
   }
 };
 
@@ -44,9 +62,7 @@ Json::Value readJsonFile(const std::string& doc) {
 }
 
 PyTrajOptProb PyConstructProblem(const std::string& json_string, py::object py_env) {
-  py::object openravepy = py::import("openravepy");
-  int id = py::extract<int>(openravepy.attr("RaveGetEnvironmentId")(py_env));
-  EnvironmentBasePtr cpp_env = RaveGetEnvironment(id);
+  EnvironmentBasePtr cpp_env = GetCppEnv(py_env);
   Json::Value json_root = readJsonFile(json_string);
   TrajOptProbPtr cpp_prob = ConstructProblem(json_root, cpp_env);
   return PyTrajOptProb(cpp_prob);
@@ -146,25 +162,15 @@ public:
     m_cc->PlotCollisionGeometry(handles);
     return PyGraphHandle(handles);
   }
+  void ExcludeCollisionPair(py::object link0, py::object link1) {
+    EnvironmentBasePtr env = boost::const_pointer_cast<EnvironmentBase>(m_cc->GetEnv());
+    m_cc->ExcludeCollisionPair(*GetCppLink(link0, env), *GetCppLink(link1, env));
+  }
   PyCollisionChecker(CollisionCheckerPtr cc) : m_cc(cc) {}
 private:
   PyCollisionChecker();
   CollisionCheckerPtr m_cc;
 };
-
-
-EnvironmentBasePtr GetCppEnv(py::object py_env) {
-  py::object openravepy = py::import("openravepy");
-  int id = py::extract<int>(openravepy.attr("RaveGetEnvironmentId")(py_env));
-  EnvironmentBasePtr cpp_env = RaveGetEnvironment(id);
-  return cpp_env;
-}
-KinBodyPtr GetCppKinBody(py::object py_kb, EnvironmentBasePtr env) {
-  py::object openravepy = py::import("openravepy");
-  int id = py::extract<int>(py_kb.attr("GetEnvironmentId")());
-  return env->GetBodyFromEnvironmentId(id);
-}
-
 
 
 
@@ -185,6 +191,12 @@ public:
   PyGraphHandle PlotKinBody(py::object py_kb) {
     return PyGraphHandle(m_viewer->PlotKinBody(GetCppKinBody(py_kb, m_viewer->GetEnv())));
   }
+  void SetAllTransparency(float a) {
+    m_viewer->SetAllTransparency(a);
+  }
+  void Idle() {
+    m_viewer->Idle();
+  }
 };
 PyOSGViewer PyGetViewer(py::object py_env) {
   EnvironmentBasePtr env = GetCppEnv(py_env);
@@ -192,13 +204,17 @@ PyOSGViewer PyGetViewer(py::object py_env) {
   return PyOSGViewer(boost::dynamic_pointer_cast<OSGViewer>(viewer));
 }
 
+
 BOOST_PYTHON_MODULE(ctrajoptpy) {
+
+  openravepy = py::import("openravepy");
 
   py::class_<PyTrajOptProb>("TrajOptProb", py::no_init)
       .def("GetDOFIndices", &PyTrajOptProb::GetDOFIndices)
+      .def("SetRobotActiveDOFs", &PyTrajOptProb::SetRobotActiveDOFs, "Sets the active DOFs of the robot to the DOFs in the optimization problem")
   ;
-  py::def("SetInteractive", &SetInteractive);
-  py::def("ConstructProblem", &PyConstructProblem);
+  py::def("SetInteractive", &SetInteractive, "if True, pause and plot every iteration");
+  py::def("ConstructProblem", &PyConstructProblem, "create problem from JSON string");
   py::def("OptimizeProblem", &PyOptimizeProblem);
 
   py::class_<PyTrajOptResult>("TrajOptResult", py::no_init)
@@ -212,6 +228,7 @@ BOOST_PYTHON_MODULE(ctrajoptpy) {
       .def("AllVsAll", &PyCollisionChecker::AllVsAll)
       .def("BodyVsAll", &PyCollisionChecker::BodyVsAll)
       .def("PlotCollisionGeometry", &PyCollisionChecker::PlotCollisionGeometry)
+      .def("ExcludeCollisionPair", &PyCollisionChecker::ExcludeCollisionPair)
       ;
   py::def("GetCollisionChecker", &PyGetCollisionChecker);
   py::class_<PyCollision>("Collision", py::no_init)
@@ -224,6 +241,9 @@ BOOST_PYTHON_MODULE(ctrajoptpy) {
   py::class_< PyOSGViewer >("OSGViewer", py::no_init)
      .def("Step", &PyOSGViewer::Step)
      .def("PlotKinBody", &PyOSGViewer::PlotKinBody)
+     .def("SetAllTransparency", &PyOSGViewer::SetAllTransparency)
+     .def("Idle", &PyOSGViewer::Idle)
     ;
-  py::def("GetViewer", &PyGetViewer);
+  py::def("GetViewer", &PyGetViewer, "Get OSG viewer for environment or create a new one");
+
 }

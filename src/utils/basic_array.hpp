@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 
+namespace util {
+
 template<class T>
 struct BasicArray {
 
@@ -112,3 +114,5 @@ struct BasicArray {
   }
 
 };
+
+}

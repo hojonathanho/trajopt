@@ -5,7 +5,6 @@
 #include <boost/function.hpp>
 #include <osgGA/TrackballManipulator>
 
-
 typedef OpenRAVE::RaveVector<float> RaveVectorf;
 
 class OSGViewer : public OpenRAVE::ViewerBase {
@@ -18,7 +17,7 @@ public:
   virtual void quitmainloop() {}
   void RemoveKinBody(OpenRAVE::KinBodyPtr pbody);
   void Draw();
-  void Idle();
+  void Idle(); // should be called ToggleIdle
   void UpdateSceneData();
   const std::string& GetName() const {return m_name;}
 
@@ -33,8 +32,11 @@ public:
   OpenRAVE::GraphHandlePtr drawarrow(const RaveVectorf& p1, const RaveVectorf& p2, float fwidth, const RaveVectorf& color);
   OpenRAVE::GraphHandlePtr  drawtrimesh (const float *ppoints, int stride, const int *pIndices, int numTriangles, const RaveVectorf &color);
 //  OpenRAVE::GraphHandlePtr drawtrimesh (const float *ppoints, int stride, const int *pIndices, int numTriangles, const boost::multi_array< float, 2 > &colors);
+  OpenRAVE::GraphHandlePtr plot3 (const float *ppoints, int numPoints, int stride, float fPointSize, const OpenRAVE::RaveVector< float > &color, int drawstyle=0);
   OpenRAVE::GraphHandlePtr plot3(const float* ppoints, int numPoints, int stride, float pointsize, const float* colors, int drawstyle=0, bool bhasalpha=false);
   OpenRAVE::GraphHandlePtr  drawlinelist(const float *ppoints, int numPoints, int stride, float fwidth, const RaveVectorf &color);
+  OpenRAVE::GraphHandlePtr  drawlinestrip(const float *ppoints, int numPoints, int stride, float fwidth, const RaveVectorf &color);
+  OpenRAVE::GraphHandlePtr  _drawlines(osg::PrimitiveSet::Mode mode, const float *ppoints, int numPoints, int stride, float fwidth, const RaveVectorf &color);
 
   void SetAllTransparency(float alpha);
 
@@ -62,7 +64,7 @@ public:
 //  osg::ref_ptr<osgViewer::Viewer> m_viewer;
   osg::ref_ptr<osg::Camera> m_cam;
   osgViewer::Viewer m_viewer;
-  bool m_idling;
+  bool m_idling, m_request_stop_idling;
   std::string m_name;
 
 

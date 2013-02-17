@@ -38,9 +38,11 @@ static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<Constrai
   }
   gTrajHandles.clear();
   gTrajPlayPos = -1;
-  PlotTraj(viewer, rad, getTraj(x, vars), gTrajHandles);
+  TrajArray traj = getTraj(x, vars);
+  PlotTraj(viewer, rad, traj, gTrajHandles);
   viewer.Idle();
   gTrajHandles.clear();
+  rad.SetDOFValues(toDblVec(traj.row(traj.rows()-1)));
 }
 
 static void TrajPlayCallback(char c) {

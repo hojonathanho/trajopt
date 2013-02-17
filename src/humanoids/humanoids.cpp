@@ -5,9 +5,12 @@
 #include "ipi/sco/expr_op_overloads.hpp"
 #include <boost/foreach.hpp>
 #include "utils/eigen_conversions.hpp"
+#include "trajopt/problem_description.hpp"
+#include "humanoids/hull2d.hpp"
 using namespace util;
 using namespace Eigen;
 using namespace std;
+using namespace Json;
 namespace trajopt {
 
 void PolygonToEquations(const MatrixX2d& pts, MatrixX2d& ab, VectorXd& c) {
@@ -38,14 +41,14 @@ void PolygonToEquations(const MatrixX2d& pts, MatrixX2d& ab, VectorXd& c) {
 }
 
 
-ZMP::ZMP(RobotAndDOFPtr rad, const MatrixX2d& hullpts, const VarVector& vars) :
+ZMPConstraint::ZMPConstraint(RobotAndDOFPtr rad, const MatrixX2d& hullpts, const VarVector& vars) :
           m_rad(rad), m_vars(vars), m_pts(hullpts) {
 
   // find the equations representing the polygon
   PolygonToEquations(m_pts, m_ab, m_c);
 }
 
-DblVec ZMP::value(const DblVec& x) {
+DblVec ZMPConstraint::value(const DblVec& x) {
   m_rad->SetDOFValues(getDblVec(x,m_vars));
   OR::Vector moment(0,0,0);
   // calculate center of mass
@@ -63,7 +66,7 @@ DblVec ZMP::value(const DblVec& x) {
   return toDblVec(m_ab * xy + m_c);
 }
 
-ConvexConstraintsPtr ZMP::convex(const DblVec& x, Model* model) {
+ConvexConstraintsPtr ZMPConstraint::convex(const DblVec& x, Model* model) {
   DblVec curvals = getDblVec(x, m_vars);
   m_rad->SetDOFValues(curvals);
   DblMatrix jacmoment = DblMatrix::Zero(3, curvals.size());
@@ -90,7 +93,7 @@ ConvexConstraintsPtr ZMP::convex(const DblVec& x, Model* model) {
   return out;
 }
 
-void ZMP::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
+void ZMPConstraint::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
   Matrix<float, Dynamic, 3, RowMajor> xyz(m_ab.rows()*2, 3);
   xyz.col(2).setZero();
   int npts = m_pts.rows();
@@ -116,9 +119,9 @@ void ZMP::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphH
   handles.push_back(env.drawarrow(moment, moment_ground, .005, OR::RaveVector<float>(1,0,0,1)));
 }
 
-struct StaticTorqueCalc : public VectorOfVector {
+struct StaticTorqueCostCalc : public VectorOfVector {
   RobotAndDOFPtr m_rad;
-  StaticTorqueCalc(const RobotAndDOFPtr rad) : m_rad(rad) {}
+  StaticTorqueCostCalc(const RobotAndDOFPtr rad) : m_rad(rad) {}
   VectorXd operator()(const VectorXd& x) const {
     m_rad->SetDOFValues(toDblVec(x));
     VectorXd out = VectorXd::Zero(m_rad->GetDOF());
@@ -133,8 +136,8 @@ struct StaticTorqueCalc : public VectorOfVector {
   }
 };
 
-StaticTorque::StaticTorque(RobotAndDOFPtr rad, const VarVector& vars, double coeff) :
-  CostFromNumDiffErr(VectorOfVectorPtr(new StaticTorqueCalc(rad)), vars, VectorXd::Ones(vars.size())*coeff,
+StaticTorqueCost::StaticTorqueCost(RobotAndDOFPtr rad, const VarVector& vars, double coeff) :
+  CostFromNumDiffErr(VectorOfVectorPtr(new StaticTorqueCostCalc(rad)), vars, VectorXd::Ones(vars.size())*coeff,
     SQUARED,  "static_torque") {
 }
 
@@ -157,6 +160,122 @@ struct PECalc : public VectorOfVector {
 PECost::PECost(RobotAndDOFPtr rad, const VarVector& vars, double coeff) :
   CostFromNumDiffErr(VectorOfVectorPtr(new PECalc(rad)), vars, VectorXd::Ones(1)*coeff,
     SQUARED,  "PE") {
+}
+
+extern ProblemConstructionInfo* gPCI;
+
+
+struct PECostInfo : public CostInfo {
+  double coeff;
+  int timestep;
+  void fromJson(const Value& v) {
+    FAIL_IF_FALSE(v.isMember("params"));
+    const Value& params = v["params"];
+    childFromJson(params, timestep, "timestep");
+    childFromJson(params, coeff, "coeff");
+    int n_steps = gPCI->basic_info.n_steps;
+    FAIL_IF_FALSE((timestep >= 0) && (timestep < n_steps));
+  }
+  void hatch(TrajOptProb& prob) {
+    prob.addCost(CostPtr(new PECost(prob.GetRAD(), prob.GetVarRow(timestep), coeff)));
+  }
+  static CostInfoPtr create() {
+    return CostInfoPtr(new PECostInfo());
+  }
+};
+struct StaticTorqueCostCostInfo : public CostInfo {
+  double coeff;
+  int timestep;
+  void fromJson(const Value& v) {
+    FAIL_IF_FALSE(v.isMember("params"));
+    const Value& params = v["params"];
+    childFromJson(params, timestep, "timestep");
+    childFromJson(params, coeff, "coeff");
+    int n_steps = gPCI->basic_info.n_steps;
+    FAIL_IF_FALSE((timestep >= 0) && (timestep < n_steps));
+  }
+  void hatch(TrajOptProb& prob) {
+    prob.addCost(CostPtr(new StaticTorqueCost(prob.GetRAD(), prob.GetVarRow(timestep), coeff)));
+  }
+  static CostInfoPtr create() {
+    return CostInfoPtr(new StaticTorqueCostCostInfo());
+  }
+};
+
+template <typename MatrixT>
+MatrixT concat0(const MatrixT& x, const MatrixT& y) {
+  MatrixT out(x.rows() + y.rows(), x.cols());
+  out.topRows(x.rows()) = x;
+  out.bottomRows(y.rows()) = y;
+  return out;
+}
+
+/**
+import openravepy
+env = openravepy.Environment()
+env.Load("gfe.xml")
+robot = env.GetRobots()[0]
+rfoot = robot.GetLink("r_foot")
+aabb = rfoot.ComputeLocalAABB(rfoot)
+aabb.pos()+aabb.extents()
+aabb.pos()-aabb.extents()
+ */
+MatrixX2d GetLocalAabbPoly() {
+  MatrixX2d out(4,2);
+  out << 0.17939, 0.062707,
+      0.17939, -0.061646,
+      -0.08246, -0.061646,
+      -0.08246, 0.061646;
+  return out;
+}
+MatrixX2d local_aabb_poly = GetLocalAabbPoly();
+MatrixX2d GetFootPoly(const KinBody::Link& link) {
+  OpenRAVE::Vector v = link.GetTransform().trans;
+  v.z = 0;
+  return local_aabb_poly.rowwise() + Vector2d(v.x, v.y).transpose();
+}
+MatrixX2d GetFeetPoly(const vector<KinBody::LinkPtr>& links) {
+  FAIL_IF_FALSE(links.size() > 0);
+  MatrixX2d allpoly = GetFootPoly(*links[0]);
+  for (int i=1; i < links.size(); ++i) {
+    allpoly = concat0(allpoly, GetFootPoly(*links[i]));
+  }
+  return hull2d(allpoly);
+}
+
+
+struct ZMPConstraintCntInfo : public CntInfo {
+  int timestep;
+  vector<string> planted_link_names;
+  void fromJson(const Value& v) {
+    FAIL_IF_FALSE(v.isMember("params"));
+    const Value& params = v["params"];
+    childFromJson(params, timestep, "timestep");
+    int n_steps = gPCI->basic_info.n_steps;
+    FAIL_IF_FALSE((timestep >= 0) && (timestep < n_steps));
+    childFromJson(params, planted_link_names, "planted_links");
+  }
+  void hatch(TrajOptProb& prob) {
+    vector<KinBody::LinkPtr> planted_links;
+    BOOST_FOREACH(const string& linkname, planted_link_names) {
+      KinBody::LinkPtr link = prob.GetRAD()->GetRobot()->GetLink(linkname);
+      if (!link) {
+        PRINT_AND_THROW(boost::format("invalid link name: %s")%linkname);
+      }
+      planted_links.push_back(link);
+    }
+    prob.addConstr(ConstraintPtr(new ZMPConstraint(prob.GetRAD(), GetFeetPoly(planted_links), prob.GetVarRow(timestep))));
+  }
+  static CntInfoPtr create() {
+    return CntInfoPtr(new ZMPConstraintCntInfo());
+  }
+};
+
+
+void RegisterHumanoidCostsAndCnts() {
+  CostInfo::RegisterMaker("potential_energy", &PECostInfo::create);
+  CostInfo::RegisterMaker("static_torque", &StaticTorqueCostCostInfo::create);
+  CntInfo::RegisterMaker("zmp", &ZMPConstraintCntInfo::create);
 }
 
 
