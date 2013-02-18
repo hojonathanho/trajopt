@@ -20,6 +20,9 @@ namespace dynamics {
 using namespace std;
 using namespace Eigen;
 
+typedef Eigen::Matrix<double, 1, 1> Vector1d;
+inline Vector1d makeVector1d(double x) { Vector1d v; v(0) = x; return v; }
+
 class DynamicsProblem : public OptProb {
 public:
   double dt;
@@ -63,6 +66,10 @@ struct BoxState {
   }
 };
 
+struct BoxStateTraj {
+
+};
+
 struct BoxStateTrajVars {
   VarArray x, p, force;
   VarArray r; VarArray L, torque;
@@ -80,14 +87,14 @@ struct BoxStateTrajVars {
 
 struct BoxProperties {
   double mass;
-  Vector3d halfextents;
-  Matrix3d Ibody;
-  Matrix3d Ibodyinv;
+  Vector3d half_extents;
+  Matrix3d I_body;
+  Matrix3d I_body_inv;
 };
 
 struct ContactTrajVars {
-  VarArray p; // contact point, in some object's local frame
-  VarArray f; // contact force
+  VarArray p; // contact point (world frame)
+  VarArray f; // contact force (world frame)
 
   ContactTrajVars(int timesteps) {
     p.resize(timesteps, 3);
@@ -98,14 +105,14 @@ struct ContactTrajVars {
 
 
 // box state at single timestep
-struct GroundBoxContactState {
-  static int Dim() { return 6; }
+struct ContactState {
+  static inline int Dim() { return 6; }
 };
-struct GroundBoxContact {
+struct BoxGroundContact {
   DynamicsProblemPtr m_prob;
   ContactTrajVars m_trajvars;
 
-  GroundBoxContact(DynamicsProblemPtr prob) : m_prob(prob), m_trajvars(prob->n_timesteps) { }
+  BoxGroundContact(DynamicsProblemPtr prob) : m_prob(prob), m_trajvars(prob->n_timesteps) { }
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="ground_box_contact") {
     for (int t = 0; t < m_prob->n_timesteps; ++t) {
@@ -132,11 +139,12 @@ struct GroundBoxContact {
         m_trajvars.f(t,i) = vars[k++];
       }
     }
-    assert(k - start_pos == m_prob->n_timesteps*GroundBoxContactState::Dim());
+    assert(k - start_pos == m_prob->n_timesteps*ContactState::Dim());
     return k;
   }
 };
-typedef boost::shared_ptr<GroundBoxContact> GroundBoxContactPtr;
+typedef boost::shared_ptr<BoxGroundContact> BoxGroundContactPtr;
+
 
 class Box {
 public:
@@ -152,10 +160,10 @@ public:
   Box(DynamicsProblemPtr prob, const BoxProperties &props, const BoxState &init_state) : m_prob(prob), m_props(props), m_trajvars(prob->n_timesteps), m_init_state(init_state) { }
 
   // ground hack for now
-  vector<GroundBoxContactPtr> m_ground_conts;
+  vector<BoxGroundContactPtr> m_ground_conts;
 
   void registerGroundContact() {
-    GroundBoxContactPtr ctv(new GroundBoxContact(m_prob));
+    BoxGroundContactPtr ctv(new BoxGroundContact(m_prob));
     m_ground_conts.push_back(ctv);
   }
 
@@ -198,7 +206,7 @@ public:
       m_ground_conts[z]->fillVarNamesAndBounds(out_names, out_vlower, out_vupper, (boost::format("%s_contact_%d") % name_prefix % z).str());
     }
 
-    assert(out_names.size() - init_size == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*GroundBoxContactState::Dim()));
+    assert(out_names.size() - init_size == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
   }
 
   int setVariables(const vector<Var> &vars, int start_pos) {
@@ -226,12 +234,13 @@ public:
     for (int z = 0; z < m_ground_conts.size(); ++z) {
       k = m_ground_conts[z]->setVariables(vars, k);
     }
+    /*
     cout << k - start_pos << endl;
     cout << m_prob->n_timesteps << endl;
     cout << BoxState::Dim() << endl;
     cout << m_ground_conts.size() << endl;
-    cout << GroundBoxContactState::Dim() << endl;
-    assert(k - start_pos == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*GroundBoxContactState::Dim()));
+    cout << ContactState::Dim() << endl;*/
+    assert(k - start_pos == m_prob->n_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
     return k;
   }
 
@@ -257,7 +266,7 @@ public:
         force_i.constant += m_prob->gravity(i);
         // force from ground contacts
         for (int z = 0; z < m_ground_conts.size(); ++z) {
-          force_i = force_i + m_ground_conts[z]->m_trajvars.f(t,i);
+       //   force_i = force_i + m_ground_conts[z]->m_trajvars.f(t,i);
         }
         // TODO: add other forces here
         model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_i, "");
@@ -278,24 +287,85 @@ private:
 };
 typedef boost::shared_ptr<Box> BoxPtr;
 
-#if 0
-class BoxGroundConstraint {
+template<class T>
+vector<T> concat(const vector<T> &a, const vector<T> &b) {
+  vector<T> v = a;
+  v.insert(v.end(), b.begin(), b.end());
+  return v;
+}
+
+void varArrayIntoVector(const VarArray &a, VarVector &out) {
+  for (int i = 0; i < a.rows(); ++i) {
+    for (int j = 0; j < a.cols(); ++j) {
+      out.push_back(a(i,j));
+    }
+  }
+}
+
+inline Quaterniond toQuat(const VectorXd &v) {
+  assert(v.size() == 4);
+  return Quaterniond(v(1), v(2), v(3), v(0));
+}
+
+inline Vector4d toVec(const Quaterniond &q) {
+  return Vector4d(q.x(), q.y(), q.z(), q.w());
+}
+
+// nonpenetration constraint--lowest point on box must have z-value >= ground z-value
+class BoxGroundConstraint;
+struct BoxGroundConstraintErrCalc : public VectorOfVector {
+  BoxGroundConstraint *m_cnt;
+  BoxGroundConstraintErrCalc(BoxGroundConstraint *cnt) : m_cnt(cnt) { }
+  VectorXd operator()(const VectorXd &vals) const;
+  static VarVector buildVarVector(BoxPtr box);
+};
+class BoxGroundConstraint : public ConstraintFromNumDiff {
 public:
   DynamicsProblemPtr m_prob;
-  Box m_box;
+  BoxPtr m_box;
   double m_ground_z;
 
-  GroundConstraint(DynamicsProblemPtr prob, double ground_z, BoxPtr box) : m_prob(prob), m_ground_z(ground_z), m_box(box) {
+  BoxGroundConstraint(DynamicsProblemPtr prob, double ground_z, BoxPtr box, const string &name="box_ground_constraint")
+    : m_prob(prob), m_ground_z(ground_z), m_box(box),
+      ConstraintFromNumDiff(VectorOfVectorPtr(new BoxGroundConstraintErrCalc(this)), BoxGroundConstraintErrCalc::buildVarVector(box), INEQ, name)
+  { }
 
-  }
-
-  void applyConstraints() {
-
-  }
+private:
 
 };
 typedef boost::shared_ptr<BoxGroundConstraint> BoxGroundConstraintPtr;
-#endif
+
+inline double positivePart(double x) {
+  return x > 0 ? x : 0;
+}
+
+VectorXd BoxGroundConstraintErrCalc::operator()(const VectorXd &vals) const {
+  // TODO: use some sort of view?
+  MatrixXd box_x(m_cnt->m_prob->n_timesteps, 3), box_r(m_cnt->m_prob->n_timesteps, 4);
+  int k = 0;
+  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
+    for (int i = 0; i < 3; ++i) box_x(t,i) = vals[k++];
+  }
+  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
+    for (int i = 0; i < 4; ++i) box_r(t,i) = vals[k++];
+  }
+
+  double penetration = 0;
+  // TODO: take rotation into account
+  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
+    penetration += positivePart(m_cnt->m_ground_z - (box_x(t,2) - m_cnt->m_box->m_props.half_extents(2)));
+  }
+  return makeVector1d(penetration);
+}
+
+VarVector BoxGroundConstraintErrCalc::buildVarVector(BoxPtr box) {
+  VarVector v;
+  varArrayIntoVector(box->m_trajvars.x, v);
+  varArrayIntoVector(box->m_trajvars.r, v);
+  return v;
+}
+
+
 
 } // namespace dynamics
 } // namespace trajopt

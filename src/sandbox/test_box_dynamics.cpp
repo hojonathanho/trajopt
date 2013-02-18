@@ -75,8 +75,8 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
 
   dynamics::BoxProperties props;
   props.mass = 1.0;
-  props.halfextents = Vector3d(.5, .5, .5);
-  props.Ibody = props.Ibodyinv = Eigen::Matrix3d::Identity();
+  props.half_extents = Vector3d(.5, .5, .5);
+  props.I_body = props.I_body_inv = Eigen::Matrix3d::Identity();
 
   for (int i = 0; i < n_objects; ++i) {
     dynamics::BoxPtr box(new dynamics::Box(prob, props, init_states[i]));
@@ -99,6 +99,7 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
 
   for (int i = 0; i < n_objects; ++i) {
     out_objects[i]->applyConstraints();
+    prob->addConstr(ConstraintPtr(new dynamics::BoxGroundConstraint(prob, 0., out_objects[i])));
   }
 }
 
@@ -126,7 +127,7 @@ int main(int argc, char* argv[]) {
 
   vector<dynamics::BoxPtr> objects;
   vector<dynamics::BoxState> init_states;
-  dynamics::BoxState bs; bs.x = Vector3d(0, 0, 5);
+  dynamics::BoxState bs; bs.x = Vector3d(0, 0, 5-.58+.5);
   init_states.push_back(bs);
   MakeVariablesAndBounds(prob, init_states, objects);
 
