@@ -11,6 +11,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include "trajopt/typedefs.hpp"
+#include "util.h"
 
 #include <iostream>
 
@@ -19,9 +20,6 @@ namespace dynamics {
 
 using namespace std;
 using namespace Eigen;
-
-typedef Eigen::Matrix<double, 1, 1> Vector1d;
-inline Vector1d makeVector1d(double x) { Vector1d v; v(0) = x; return v; }
 
 class DynamicsProblem : public OptProb {
 public:
@@ -167,6 +165,8 @@ public:
     m_ground_conts.push_back(ctv);
   }
 
+  void addGroundNonpenetrationCnts();
+
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box") {
     int init_size = out_names.size();
     for (int t = 0; t < m_prob->n_timesteps; ++t) {
@@ -244,7 +244,7 @@ public:
     return k;
   }
 
-  void applyConstraints() {
+  void addConstraints() {
     ModelPtr model = m_prob->getModel();
     double dt = m_prob->dt;
     // initial conditions
@@ -253,10 +253,10 @@ public:
     for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.r(0,i) - m_init_state.r.vec()(i), "");
     model->addEqCnt(m_trajvars.r(0,3) - m_init_state.r.w(), "");
     for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.L(0,i) - m_init_state.L(i), "");
-    // integration
+    // integration (implicit euler)
     for (int t = 1; t < m_prob->n_timesteps; ++t) {
       for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.x(t,i) - m_trajvars.x(t-1,i) - dt/m_props.mass*m_trajvars.p(t,i), "");
-      for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.p(t,i) - m_trajvars.p(t-1,i) - dt*m_trajvars.force(t-1,i), "");
+      for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.p(t,i) - m_trajvars.p(t-1,i) - dt*m_trajvars.force(t,i), "");
       // TODO: torque
     }
     // forces
@@ -287,47 +287,28 @@ private:
 };
 typedef boost::shared_ptr<Box> BoxPtr;
 
-template<class T>
-vector<T> concat(const vector<T> &a, const vector<T> &b) {
-  vector<T> v = a;
-  v.insert(v.end(), b.begin(), b.end());
-  return v;
-}
-
-void varArrayIntoVector(const VarArray &a, VarVector &out) {
-  for (int i = 0; i < a.rows(); ++i) {
-    for (int j = 0; j < a.cols(); ++j) {
-      out.push_back(a(i,j));
-    }
-  }
-}
-
-inline Quaterniond toQuat(const VectorXd &v) {
-  assert(v.size() == 4);
-  return Quaterniond(v(1), v(2), v(3), v(0));
-}
-
-inline Vector4d toVec(const Quaterniond &q) {
-  return Vector4d(q.x(), q.y(), q.z(), q.w());
-}
-
-// nonpenetration constraint--lowest point on box must have z-value >= ground z-value
+// nonpenetration constraint for a single timestep--lowest point on box must have z-value >= ground z-value
 class BoxGroundConstraint;
 struct BoxGroundConstraintErrCalc : public VectorOfVector {
   BoxGroundConstraint *m_cnt;
   BoxGroundConstraintErrCalc(BoxGroundConstraint *cnt) : m_cnt(cnt) { }
   VectorXd operator()(const VectorXd &vals) const;
-  static VarVector buildVarVector(BoxPtr box);
+  static VarVector buildVarVector(Box *box, int t);
 };
 class BoxGroundConstraint : public ConstraintFromNumDiff {
 public:
   DynamicsProblemPtr m_prob;
-  BoxPtr m_box;
+  Box *m_box;
   double m_ground_z;
+  int m_t;
 
-  BoxGroundConstraint(DynamicsProblemPtr prob, double ground_z, BoxPtr box, const string &name="box_ground_constraint")
-    : m_prob(prob), m_ground_z(ground_z), m_box(box),
-      ConstraintFromNumDiff(VectorOfVectorPtr(new BoxGroundConstraintErrCalc(this)), BoxGroundConstraintErrCalc::buildVarVector(box), INEQ, name)
+  BoxGroundConstraint(DynamicsProblemPtr prob, double ground_z, Box *box, int t, const string &name_prefix="box_ground")
+    : m_prob(prob), m_ground_z(ground_z), m_box(box), m_t(t),
+      ConstraintFromNumDiff(
+        VectorOfVectorPtr(new BoxGroundConstraintErrCalc(this)),
+        BoxGroundConstraintErrCalc::buildVarVector(box, t),
+        INEQ,
+        (boost::format("%s_%d") % name_prefix % t).str())
   { }
 
 private:
@@ -335,36 +316,37 @@ private:
 };
 typedef boost::shared_ptr<BoxGroundConstraint> BoxGroundConstraintPtr;
 
-inline double positivePart(double x) {
-  return x > 0 ? x : 0;
-}
 
 VectorXd BoxGroundConstraintErrCalc::operator()(const VectorXd &vals) const {
   // TODO: use some sort of view?
-  MatrixXd box_x(m_cnt->m_prob->n_timesteps, 3), box_r(m_cnt->m_prob->n_timesteps, 4);
-  int k = 0;
-  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
-    for (int i = 0; i < 3; ++i) box_x(t,i) = vals[k++];
-  }
-  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
-    for (int i = 0; i < 4; ++i) box_r(t,i) = vals[k++];
-  }
+  //MatrixXd box_x(m_cnt->m_prob->n_timesteps, 3), box_r(m_cnt->m_prob->n_timesteps, 4);
+  //int k = readIntoMatrix(vals, box_r, readIntoMatrix(vals, box_x, 0));
+  //assert(k == vals.size());
+  assert(vals.size() == 7);
+  Vector3d box_x = vals.block<3,1>(0,0);
+  Quaterniond box_r = toQuat(vals.block<4,1>(3,0));
 
-  double penetration = 0;
   // TODO: take rotation into account
-  for (int t = 0; t < m_cnt->m_prob->n_timesteps; ++t) {
-    penetration += positivePart(m_cnt->m_ground_z - (box_x(t,2) - m_cnt->m_box->m_props.half_extents(2)));
-  }
-  return makeVector1d(penetration);
+  return makeVector1d(positivePart(m_cnt->m_ground_z - (box_x(2) - m_cnt->m_box->m_props.half_extents(2))));
 }
 
-VarVector BoxGroundConstraintErrCalc::buildVarVector(BoxPtr box) {
+VarVector BoxGroundConstraintErrCalc::buildVarVector(Box *box, int t) {
   VarVector v;
-  varArrayIntoVector(box->m_trajvars.x, v);
-  varArrayIntoVector(box->m_trajvars.r, v);
+  for (int i = 0; i < 3; ++i) {
+    v.push_back(box->m_trajvars.x(t,i));
+  }
+  for (int i = 0; i < 4; ++i) {
+    v.push_back(box->m_trajvars.r(t,i));
+  }
   return v;
 }
 
+
+void Box::addGroundNonpenetrationCnts() {
+  for (int t = 0; t < m_prob->n_timesteps; ++t) {
+    m_prob->addConstr(ConstraintPtr(new BoxGroundConstraint(m_prob, 0., this, t)));
+  }
+}
 
 
 } // namespace dynamics

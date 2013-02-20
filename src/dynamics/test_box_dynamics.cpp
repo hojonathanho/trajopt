@@ -20,9 +20,7 @@ using namespace std;
 static const double GRAVITY = -9.8;
 static const double TABLE_HEIGHT = 0.0; // DO NOT CHANGE (complementarity)
 
-typedef Eigen::Matrix<double, 1, 1> Vector1d;
-inline Vector1d makeVector1d(double x) { Vector1d v; v(0) = x; return v; }
-
+/*
 struct ComplErrCalc : public VectorOfVector {
   vector<ScalarOfVectorPtr> m_terms;
   ComplErrCalc(const vector<ScalarOfVectorPtr> &terms) : m_terms(terms) { }
@@ -38,7 +36,7 @@ struct ComplErrCalc : public VectorOfVector {
 struct ComplConstraint : public ConstraintFromNumDiff {
   ComplConstraint(const vector<ScalarOfVectorPtr> &terms, const VarVector &vars, const string &name="ComplConstraint") :
     ConstraintFromNumDiff(VectorOfVectorPtr(new ComplErrCalc(terms)), vars, EQ, name) { }
-};
+};*/
 
 /*
 ConstraintPtr MakeBoxGroundConstraint(VarVector &x, VarVector &ground_force, int i, const string &name) {
@@ -80,10 +78,14 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
 
   for (int i = 0; i < n_objects; ++i) {
     dynamics::BoxPtr box(new dynamics::Box(prob, props, init_states[i]));
-    box->registerGroundContact();
-    box->fillVarNamesAndBounds(names, vlower, vupper);
     out_objects.push_back(box);
   }
+
+  for (dynamics::BoxPtr &box : out_objects) {
+    box->registerGroundContact();
+    box->fillVarNamesAndBounds(names, vlower, vupper);
+  }
+
   assert(names.size() == vlower.size() && names.size() == vupper.size());
 
   prob->createVariables(names, vlower, vupper);
@@ -97,9 +99,9 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
 
   cout << Str(names) << endl;
 
-  for (int i = 0; i < n_objects; ++i) {
-    out_objects[i]->applyConstraints();
-    prob->addConstr(ConstraintPtr(new dynamics::BoxGroundConstraint(prob, 0., out_objects[i])));
+  for (dynamics::BoxPtr &box : out_objects) {
+    box->addConstraints();
+    box->addGroundNonpenetrationCnts();
   }
 }
 

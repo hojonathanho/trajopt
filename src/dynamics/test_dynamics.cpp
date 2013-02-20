@@ -203,7 +203,6 @@ void MakeVariablesAndBounds(int n_steps, double dt, OptProb& prob_out, VarArray 
 }
 
 
-
 class ZeroCost : public Cost {
   ConvexObjectivePtr convex(const DblVec&, Model* model) {
     ConvexObjectivePtr out(new ConvexObjective(model));
