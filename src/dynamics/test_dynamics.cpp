@@ -156,7 +156,7 @@ void MakeVariablesAndBounds(int n_steps, double dt, OptProb& prob_out, VarArray 
         model->addEqCnt(v(0,j) - init_v(j), "");
       } else {
         model->addEqCnt(x(i,j) - x(i-1,j) - dt*v(i,j), "");
-        model->addEqCnt(v(i,j) - v(i-1,j) - dt*a(i-1,j), "");
+        model->addEqCnt(v(i,j) - v(i-1,j) - dt*a(i,j), "");
       }
     }
   }
@@ -192,8 +192,8 @@ void MakeVariablesAndBounds(int n_steps, double dt, OptProb& prob_out, VarArray 
   // TODO: convert model constrs to prob constrs
 
   // ground force complementarity
-  for (int i = 0; i < n_steps-2 /* last unnecessary */; ++i) {
-    int z = i+2;
+  for (int i = 0; i < n_steps-1 /* last unnecessary */; ++i) {
+    int z = i;
     VarVector vec;
     vec.push_back(ground_force(i,2));
     vec.push_back(x(z,2));
