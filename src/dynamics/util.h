@@ -16,7 +16,7 @@ inline Quaterniond toQuat(const DenseBase<Derived> &v) {
   return Quaterniond(v(1), v(2), v(3), v(0));
 }
 
-inline Vector4d toVec(const Quaterniond &q) {
+inline Vector4d quatToVec(const Quaterniond &q) {
   return Vector4d(q.x(), q.y(), q.z(), q.w());
 }
 
@@ -47,6 +47,15 @@ void varArrayIntoVector(const VarArray &a, VarVector &out) {
     }
   }
 }
+
+class ZeroCost : public Cost {
+  ConvexObjectivePtr convex(const DblVec&, Model* model) {
+    ConvexObjectivePtr out(new ConvexObjective(model));
+    out->addAffExpr(AffExpr());
+    return out;
+  }
+  double value(const DblVec&) { return 0.; }
+};
 
 } // namespace dynamics
 } // namespace trajopt

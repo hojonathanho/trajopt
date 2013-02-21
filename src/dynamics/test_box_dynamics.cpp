@@ -18,53 +18,8 @@ using namespace OpenRAVE;
 using namespace std;
 
 static const double GRAVITY = -9.8;
-static const double TABLE_HEIGHT = 0.0; // DO NOT CHANGE (complementarity)
 
 /*
-struct ComplErrCalc : public VectorOfVector {
-  vector<ScalarOfVectorPtr> m_terms;
-  ComplErrCalc(const vector<ScalarOfVectorPtr> &terms) : m_terms(terms) { }
-  VectorXd operator()(const VectorXd &vals) const {
-    double x = 1;
-    for (int i = 0; i < m_terms.size(); ++i) {
-      x *= m_terms[i]->call(vals);
-    }
-    return makeVector1d(x);
-  }
-};
-
-struct ComplConstraint : public ConstraintFromNumDiff {
-  ComplConstraint(const vector<ScalarOfVectorPtr> &terms, const VarVector &vars, const string &name="ComplConstraint") :
-    ConstraintFromNumDiff(VectorOfVectorPtr(new ComplErrCalc(terms)), vars, EQ, name) { }
-};*/
-
-/*
-ConstraintPtr MakeBoxGroundConstraint(VarVector &x, VarVector &ground_force, int i, const string &name) {
-  int z = i + 2;
-  VarVector vars;
-  vars.push_back(ground_force(i,2));
-  vars.push_back(x(z,2));
-  vector<ScalarOfVectorPtr> &terms;
-  terms.push_back(ScalarOfVectorPtr());
-  terms.push_back(ScalarOfVectorPtr());
-  ConstraintPtr cnt(new ComplConstraint(terms, vars, name));
-  return cnt;
-}*/
-
-/*
-struct ComplErrCalc : public VectorOfVector {
-  VectorXd operator()(const VectorXd& vals) const {
-    //out(0) = vals.norm() - vals.lpNorm<1>();
-    return makeVector1d(vals.prod());
-  }
-};
-
-struct ComplConstraint : public ConstraintFromNumDiff {
-  ComplConstraint(const VarVector &vars, const string &name="ComplConstraint") : ConstraintFromNumDiff(VectorOfVectorPtr(new ComplErrCalc()), vars, EQ, name) { }
-};*/
-
-
-
 void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dynamics::BoxState> &init_states, vector<dynamics::BoxPtr> &out_objects) {
   int n_objects = init_states.size();
   vector<double> vlower, vupper;
@@ -77,7 +32,7 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
   props.I_body = props.I_body_inv = Eigen::Matrix3d::Identity();
 
   for (int i = 0; i < n_objects; ++i) {
-    dynamics::BoxPtr box(new dynamics::Box(prob, props, init_states[i]));
+    dynamics::BoxPtr box(new dynamics::Box(prob.get(), props, init_states[i]));
     out_objects.push_back(box);
   }
 
@@ -101,42 +56,34 @@ void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dyna
 
   for (dynamics::BoxPtr &box : out_objects) {
     box->addConstraints();
-    box->addGroundNonpenetrationCnts();
+    box->addGroundNonpenetrationCnts(GROUND_Z);
   }
-}
-
-class ZeroCost : public Cost {
-  ConvexObjectivePtr convex(const DblVec&, Model* model) {
-    ConvexObjectivePtr out(new ConvexObjective(model));
-    out->addAffExpr(AffExpr());
-    return out;
-  }
-  double value(const DblVec&) {
-    return 0.;
-  }
-};
-
+}*/
 
 int main(int argc, char* argv[]) {
-  dynamics::DynamicsProblemPtr prob(new dynamics::DynamicsProblem());
-  prob->n_timesteps = 10;
-  prob->dt = 1./prob->n_timesteps;
-  prob->gravity = Vector3d(0, 0, -9.8);
+  RaveInitialize(false, Level_Debug);
+  OR::EnvironmentBasePtr env = RaveCreateEnvironment();
+  env->StopSimulation();
 
-  //Vector3d init_x(0, 0, 5), init_v(0, 0, 0);
-  //VarArray x, v, a, ground_force;
-  //DblVec initSoln;
+  dynamics::DynamicsProblemPtr prob(new dynamics::DynamicsProblem(env));
+  prob->setNumTimesteps(10);
+  prob->setDt(1./prob->m_timesteps);
+  prob->setGravity(Vector3d(0, 0, GRAVITY));
 
-  vector<dynamics::BoxPtr> objects;
-  vector<dynamics::BoxState> init_states;
-  dynamics::BoxState bs; bs.x = Vector3d(0, 0, 5-.58+.5);
-  init_states.push_back(bs);
-  MakeVariablesAndBounds(prob, init_states, objects);
+  dynamics::BoxState init_state; init_state.x = Vector3d(0, 0, 5-.58+.5);
+  dynamics::BoxProperties props;
+  props.mass = 1.0;
+  props.half_extents = Vector3d(.5, .5, .5);
+  props.I_body = props.I_body_inv = Eigen::Matrix3d::Identity();
+  dynamics::BoxPtr box(new dynamics::Box(prob.get(), props, init_state));
+  prob->addObject(box);
+
+  prob->setUpProblem();
 
   //srand(time(NULL));
   //for (int i = 0; i < initSoln.size(); ++i) initSoln[i] += 0.01*((double)rand()/RAND_MAX-.5);
   //for (int i = 0; i < initSoln.size(); ++i) cout << initSoln[i] << ' '; cout << endl;
-  prob->addCost(CostPtr(new ZeroCost())); // shut up
+  prob->addCost(CostPtr(new dynamics::ZeroCost())); // shut up
   BasicTrustRegionSQP optimizer(prob);
   optimizer.min_trust_box_size_ = 1e-7;
   optimizer.min_approx_improve_= 1e-7;
@@ -146,15 +93,18 @@ int main(int argc, char* argv[]) {
 
   optimizer.initialize(DblVec(prob->getVars().size(), 0));
   OptStatus status = optimizer.optimize();
-  cout << "x:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.x) << endl;
-  cout << "v:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.p) << endl;
-  cout << "a:\n" << getTraj(optimizer.x(), objects[0]->m_trajvars.force) << endl;
-  cout << "gp:\n" << getTraj(optimizer.x(), objects[0]->m_ground_conts[0]->m_trajvars.p) << endl;
-  cout << "gf:\n" << getTraj(optimizer.x(), objects[0]->m_ground_conts[0]->m_trajvars.f) << endl;
+  cout << "x:\n" << getTraj(optimizer.x(), box->m_trajvars.x) << endl;
+  cout << "v:\n" << getTraj(optimizer.x(), box->m_trajvars.p) << endl;
+  cout << "a:\n" << getTraj(optimizer.x(), box->m_trajvars.force) << endl;
+  cout << "gp:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.p) << endl;
+  cout << "gf:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.f) << endl;
 
 //  boost::thread run_traj(RunTraj, result, env, *rad);
 //  ViewerBasePtr viewer = RaveCreateViewer(env,"qtosg");
 //  viewer->main();
+
+  env.reset();
+  RaveDestroy();
 
   return 0;
 }

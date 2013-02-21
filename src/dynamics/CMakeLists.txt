@@ -8,8 +8,11 @@ include_directories(
 
 set(CMAKE_CXX_FLAGS "-std=c++0x")
 
+add_library(dynamics dynamics_problem.cpp)
+target_link_libraries(dynamics sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_THREAD_LIBRARY} ${OpenRAVE_BOTH_LIBRARIES})
+
 add_executable(test_dynamics test_dynamics.cpp)
 target_link_libraries(test_dynamics sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_THREAD_LIBRARY} ${OpenRAVE_BOTH_LIBRARIES})
 
 add_executable(test_box_dynamics test_box_dynamics.cpp)
-target_link_libraries(test_box_dynamics sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_THREAD_LIBRARY} ${OpenRAVE_BOTH_LIBRARIES})
+target_link_libraries(test_box_dynamics dynamics)
