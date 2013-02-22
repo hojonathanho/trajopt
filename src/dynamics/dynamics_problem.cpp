@@ -48,5 +48,18 @@ void DynamicsProblem::setUpProblem() {
 }
 
 
+vector<double> DynamicsProblem::makeInitialSolution() {
+  vector<double> v;
+  for (DynamicsObjectPtr &o : m_objects) {
+    o->fillInitialSolution(v);
+  }
+  for (ContactPtr &c : m_contacts) {
+    c->fillInitialSolution(v);
+  }
+  assert(v.size() == getVars().size());
+  return v;
+}
+
+
 } // namespace dynamics
 } // namespace trajopt

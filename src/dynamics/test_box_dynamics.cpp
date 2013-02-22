@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
   dynamics::GroundPtr ground(new dynamics::Ground("ground", prob.get(), GROUND_Z));
   prob->addObject(ground);
 
-  dynamics::BoxState init_state; init_state.x = Vector3d(0, 0, 5-.58+.5);
+  dynamics::BoxState init_state; init_state.x = Vector3d(0, 0, 5-.58+.5 - .1);
   dynamics::BoxProperties props;
   props.mass = 1.0;
   props.half_extents = Vector3d(.5, .5, .5);
@@ -56,11 +56,14 @@ int main(int argc, char* argv[]) {
   optimizer.trust_box_size_ = 1;
   optimizer.max_iter_ = 1000;
 
-  optimizer.initialize(DblVec(prob->getVars().size(), 0));
+  optimizer.initialize(prob->makeInitialSolution());
   OptStatus status = optimizer.optimize();
   cout << "x:\n" << getTraj(optimizer.x(), box->m_trajvars.x) << endl;
-  cout << "v:\n" << getTraj(optimizer.x(), box->m_trajvars.p) << endl;
+  cout << "v:\n" << getTraj(optimizer.x(), box->m_trajvars.v) << endl;
   cout << "a:\n" << getTraj(optimizer.x(), box->m_trajvars.force) << endl;
+  cout << "q:\n" << getTraj(optimizer.x(), box->m_trajvars.q) << endl;
+  cout << "w:\n" << getTraj(optimizer.x(), box->m_trajvars.w) << endl;
+  cout << "T:\n" << getTraj(optimizer.x(), box->m_trajvars.torque) << endl;
   //cout << "gp:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.p) << endl;
   //cout << "gf:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.f) << endl;
 

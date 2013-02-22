@@ -9,22 +9,62 @@ namespace dynamics {
 using namespace std;
 using namespace Eigen;
 
+
+//class QuatIntegrationConstraint : public ConstraintFromNumDiff { // TODO: analytical linearization
+//
+//  struct ErrCalc : public VectorOfVector {
+//    QuatIntegrationConstraint *m_cnt;
+//    ErrCalc(QuatIntegrationConstraint *cnt) : m_cnt(cnt) { }
+//
+//    VectorXd operator()(const VectorXd &vals) const {
+//      assert(vals.size() == 4 + 4 + 3);
+//      Quaterniond q1(toQuat(vals.block<4,1>(0,0)));
+//      Quaterniond q0(toQuat(vals.block<4,1>(4,0)));
+//      Vector3d w(vals.block<3,1>(8,0));
+//      Quaterniond expected_q1(q0*propagatorQuat(w, m_cnt->m_dt));
+//      return quatToVec(expected_q1) - quatToVec(q1);
+//    }
+//
+//    static VarVector buildVarVector(const VarVector &qvars1, const VarVector &qvars0, const VarVector &wvars) {
+//      assert(qvars0.size() == 4 && qvars1.size() == 4 && wvars.size() == 3);
+//      VarVector v;
+//      for (int i = 0; i < 4; ++i) v.push_back(qvars1[i]);
+//      for (int i = 0; i < 4; ++i) v.push_back(qvars0[i]);
+//      for (int i = 0; i < 3; ++i) v.push_back(wvars[i]);
+//      return v;
+//    }
+//  };
+//
+//public:
+//  const double m_dt;
+//
+//  QuatIntegrationConstraint(double dt, const VarVector &qvars1, const VarVector &qvars0, const VarVector &wvars, const string &name_prefix)
+//    : m_dt(dt),
+//      ConstraintFromNumDiff(
+//        VectorOfVectorPtr(new ErrCalc(this)),
+//        ErrCalc::buildVarVector(qvars1, qvars0, wvars),
+//        EQ,
+//        name_prefix)
+//  { }
+//};
+
+
 // box state at single timestep
 struct BoxState {
-  Vector3d x, p, force;
-  Quaterniond r; Vector3d L, torque;
+  Vector3d x, v, force;
+  Quaterniond q; Vector3d w, torque;
 
-  BoxState() : x(Vector3d::Zero()), p(Vector3d::Zero()), force(Vector3d::Zero()), r(Quaterniond::Identity()), L(Vector3d::Zero()), torque(Vector3d::Zero()) { }
+  BoxState() : x(Vector3d::Zero()), v(Vector3d::Zero()), force(Vector3d::Zero()), q(Quaterniond::Identity()), w(Vector3d::Zero()), torque(Vector3d::Zero()) { }
 
   static inline int Dim() { return 19; }
 
   VectorXd toVec() const {
     Eigen::Matrix<double, 19, 1> vec;
     vec.block<3, 1>(0, 0) = x;
-    vec.block<3, 1>(3, 0) = p;
+    vec.block<3, 1>(3, 0) = v;
     vec.block<3, 1>(6, 0) = force;
-    vec.block<4, 1>(9, 0) = quatToVec(r);
-    vec.block<3, 1>(13, 0) = L;
+    vec.block<4, 1>(9, 0) = quatToVec(q);
+    vec.block<3, 1>(13, 0) = w;
     vec.block<3, 1>(16, 0) = torque;
     return vec;
   }
@@ -33,27 +73,27 @@ struct BoxState {
     assert(vec.size() == Dim());
     BoxState bs;
     bs.x = vec.block<3, 1>(0, 0);
-    bs.p = vec.block<3, 1>(3, 0);
+    bs.v = vec.block<3, 1>(3, 0);
     bs.force = vec.block<3, 1>(6, 0);
-    bs.r = toQuat(vec.block<4, 1>(9, 0));
-    bs.L = vec.block<3, 1>(13, 0);
+    bs.q = toQuat(vec.block<4, 1>(9, 0));
+    bs.w = vec.block<3, 1>(13, 0);
     bs.torque = vec.block<3, 1>(16, 0);
     return bs;
   }
 };
 
 struct BoxStateTrajVars {
-  VarArray x, p, force;
-  VarArray r; VarArray L, torque;
+  VarArray x, v, force;
+  VarArray q; VarArray w, torque;
 
   BoxStateTrajVars(int timesteps) {
     x.resize(timesteps, 3);
-    p.resize(timesteps, 3);
+    v.resize(timesteps, 3);
     force.resize(timesteps, 3);
-    r.resize(timesteps, 4);
-    L.resize(timesteps, 3);
+    q.resize(timesteps, 4);
+    w.resize(timesteps, 3);
     torque.resize(timesteps, 3);
-    assert(timesteps*BoxState::Dim() == x.size() + p.size() + force.size() + r.size() + L.size() + torque.size());
+    assert(timesteps*BoxState::Dim() == x.size() + v.size() + force.size() + q.size() + w.size() + torque.size());
   }
 };
 
@@ -87,7 +127,9 @@ struct BoxGroundContact : public Contact {
   BoxGroundContactTrajVars m_trajvars;
 
   BoxGroundContact(const string &name, Box *box, Ground *ground);
+
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix);
+  void fillInitialSolution(vector<double> &out);
   int setVariables(const vector<Var> &vars, int start_pos);
   void addConstraintsToModel();
 
@@ -123,6 +165,7 @@ public:
   // end ground hack
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box");
+  void fillInitialSolution(vector<double> &out);
   int setVariables(const vector<Var> &vars, int start_pos);
   void addConstraintsToModel();
   void addToRave();
@@ -141,6 +184,7 @@ public:
   virtual ~Ground() { }
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) { }
+  void fillInitialSolution(vector<double> &out) { }
   int setVariables(const vector<Var> &vars, int start_pos) { return start_pos; }
   void addConstraintsToModel() { }
   void addToRave();
@@ -159,11 +203,11 @@ class BoxGroundConstraint : public ConstraintFromNumDiff {
 public:
   DynamicsProblem *m_prob;
   Box *m_box;
-  double m_ground_z;
+  Ground *m_ground;
   int m_t;
 
-  BoxGroundConstraint(DynamicsProblem *prob, double ground_z, Box *box, int t, const string &name_prefix="box_ground")
-    : m_prob(prob), m_ground_z(ground_z), m_box(box), m_t(t),
+  BoxGroundConstraint(DynamicsProblem *prob, Box *box, Ground *ground, int t, const string &name_prefix="box_ground")
+    : m_prob(prob), m_box(box), m_ground(ground), m_t(t),
       ConstraintFromNumDiff(
         VectorOfVectorPtr(new BoxGroundConstraintErrCalc(this)),
         BoxGroundConstraintErrCalc::buildVarVector(box, t),

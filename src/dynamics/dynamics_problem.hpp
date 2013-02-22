@@ -24,6 +24,7 @@ public:
   virtual ~DynamicsObject() { }
 
   virtual void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) = 0;
+  virtual void fillInitialSolution(vector<double> &out) = 0;
   virtual int setVariables(const vector<Var> &vars, int start_pos) = 0;
   virtual void addConstraintsToModel() = 0;
   virtual void addToRave() = 0;
@@ -60,6 +61,7 @@ public:
   void addContact(ContactPtr contact) { m_contacts.push_back(contact); }
 
   void setUpProblem();
+  vector<double> makeInitialSolution();
 };
 typedef boost::shared_ptr<DynamicsProblem> DynamicsProblemPtr;
 

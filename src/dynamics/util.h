@@ -18,6 +18,10 @@ inline OR::Vector toOR(const Quaterniond &q) {
   return OR::Vector(q.w(), q.x(), q.y(), q.z());
 }
 
+inline OR::Transform toOR(const Vector3d &x, const Quaterniond &q) {
+  return OR::Transform(toOR(q), toOR(x));
+}
+
 template<typename Derived>
 inline Quaterniond toQuat(const DenseBase<Derived> &v) {
   assert(v.size() == 4);
@@ -26,6 +30,15 @@ inline Quaterniond toQuat(const DenseBase<Derived> &v) {
 
 inline Vector4d quatToVec(const Quaterniond &q) {
   return Vector4d(q.x(), q.y(), q.z(), q.w());
+}
+
+inline Quaterniond propagatorQuat(const Vector3d& w, double dt) {
+  // see http://www.lce.hut.fi/~ssarkka/pub/quat.pdf
+  double normw = w.norm();
+  Quaterniond phiq;
+  if (normw > 0) phiq.vec() = normw > 0 ? (w/normw)*sin(normw*dt/2) : Vector3d::Zero();
+  phiq.w() = cos(normw * dt/2);
+  return phiq;
 }
 
 inline double positivePart(double x) {
