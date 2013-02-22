@@ -10,6 +10,14 @@ using namespace Eigen;
 typedef Eigen::Matrix<double, 1, 1> Vector1d;
 inline Vector1d makeVector1d(double x) { Vector1d v; v(0) = x; return v; }
 
+inline OR::Vector toOR(const Vector3d& v) {
+  return OR::Vector(v(0), v(1), v(2));
+}
+
+inline OR::Vector toOR(const Quaterniond &q) {
+  return OR::Vector(q.w(), q.x(), q.y(), q.z());
+}
+
 template<typename Derived>
 inline Quaterniond toQuat(const DenseBase<Derived> &v) {
   assert(v.size() == 4);
@@ -34,13 +42,13 @@ inline int readIntoMatrix(const VectorXd &vals, MatrixXd &out, int k) {
 }
 
 template<class T>
-vector<T> concat(const vector<T> &a, const vector<T> &b) {
+inline vector<T> concat(const vector<T> &a, const vector<T> &b) {
   vector<T> v = a;
   v.insert(v.end(), b.begin(), b.end());
   return v;
 }
 
-void varArrayIntoVector(const VarArray &a, VarVector &out) {
+inline void varArrayIntoVector(const VarArray &a, VarVector &out) {
   for (int i = 0; i < a.rows(); ++i) {
     for (int j = 0; j < a.cols(); ++j) {
       out.push_back(a(i,j));

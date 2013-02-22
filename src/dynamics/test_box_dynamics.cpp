@@ -1,16 +1,12 @@
 #include <iostream>
-#include "ipi/sco/modeling_utils.hpp"
-#include "trajopt/robot_and_dof.hpp"
-#include "utils/stl_to_string.hpp"
-#include "ipi/logging.hpp"
-#include "ipi/sco/expr_op_overloads.hpp"
 #include <openrave-core.h>
+#include "ipi/logging.hpp"
 #include "ipi/sco/optimizers.hpp"
 #include "trajopt/utils.hpp"
-#include "utils/vector_ops.hpp"
-#include "utils/eigen_conversions.hpp"
-#include "utils/stl_to_string.hpp"
+#include "osgviewer/osgviewer.hpp"
+#include "dynamics_problem.hpp"
 #include "box.h"
+
 using namespace ipi::sco;
 using namespace trajopt;
 using namespace util;
@@ -18,47 +14,7 @@ using namespace OpenRAVE;
 using namespace std;
 
 static const double GRAVITY = -9.8;
-
-/*
-void MakeVariablesAndBounds(dynamics::DynamicsProblemPtr prob, const vector<dynamics::BoxState> &init_states, vector<dynamics::BoxPtr> &out_objects) {
-  int n_objects = init_states.size();
-  vector<double> vlower, vupper;
-  vector<string> names;
-  out_objects.clear();
-
-  dynamics::BoxProperties props;
-  props.mass = 1.0;
-  props.half_extents = Vector3d(.5, .5, .5);
-  props.I_body = props.I_body_inv = Eigen::Matrix3d::Identity();
-
-  for (int i = 0; i < n_objects; ++i) {
-    dynamics::BoxPtr box(new dynamics::Box(prob.get(), props, init_states[i]));
-    out_objects.push_back(box);
-  }
-
-  for (dynamics::BoxPtr &box : out_objects) {
-    box->registerGroundContact();
-    box->fillVarNamesAndBounds(names, vlower, vupper);
-  }
-
-  assert(names.size() == vlower.size() && names.size() == vupper.size());
-
-  prob->createVariables(names, vlower, vupper);
-
-  vector<Var> vars = prob->getVars();
-  int k = 0;
-  for (int i = 0; i < n_objects; ++i) {
-    k += out_objects[i]->setVariables(vars, k);
-  }
-  assert(k == vars.size());
-
-  cout << Str(names) << endl;
-
-  for (dynamics::BoxPtr &box : out_objects) {
-    box->addConstraints();
-    box->addGroundNonpenetrationCnts(GROUND_Z);
-  }
-}*/
+static const double GROUND_Z = 0.0;
 
 int main(int argc, char* argv[]) {
   RaveInitialize(false, Level_Debug);
@@ -70,15 +26,24 @@ int main(int argc, char* argv[]) {
   prob->setDt(1./prob->m_timesteps);
   prob->setGravity(Vector3d(0, 0, GRAVITY));
 
+  dynamics::GroundPtr ground(new dynamics::Ground("ground", prob.get(), GROUND_Z));
+  prob->addObject(ground);
+
   dynamics::BoxState init_state; init_state.x = Vector3d(0, 0, 5-.58+.5);
   dynamics::BoxProperties props;
   props.mass = 1.0;
   props.half_extents = Vector3d(.5, .5, .5);
   props.I_body = props.I_body_inv = Eigen::Matrix3d::Identity();
-  dynamics::BoxPtr box(new dynamics::Box(prob.get(), props, init_state));
+  dynamics::BoxPtr box(new dynamics::Box("box", prob.get(), props, init_state));
   prob->addObject(box);
 
+  dynamics::BoxGroundContactPtr box_ground_cont(new dynamics::BoxGroundContact("box_ground_cont", box.get(), ground.get()));
+  prob->addContact(box_ground_cont);
+
   prob->setUpProblem();
+
+  OSGViewerPtr viewer(new OSGViewer(env));
+  viewer->Idle();
 
   //srand(time(NULL));
   //for (int i = 0; i < initSoln.size(); ++i) initSoln[i] += 0.01*((double)rand()/RAND_MAX-.5);
@@ -96,12 +61,11 @@ int main(int argc, char* argv[]) {
   cout << "x:\n" << getTraj(optimizer.x(), box->m_trajvars.x) << endl;
   cout << "v:\n" << getTraj(optimizer.x(), box->m_trajvars.p) << endl;
   cout << "a:\n" << getTraj(optimizer.x(), box->m_trajvars.force) << endl;
-  cout << "gp:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.p) << endl;
-  cout << "gf:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.f) << endl;
+  //cout << "gp:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.p) << endl;
+  //cout << "gf:\n" << getTraj(optimizer.x(), box->m_ground_conts[0]->m_trajvars.f) << endl;
 
 //  boost::thread run_traj(RunTraj, result, env, *rad);
-//  ViewerBasePtr viewer = RaveCreateViewer(env,"qtosg");
-//  viewer->main();
+
 
   env.reset();
   RaveDestroy();

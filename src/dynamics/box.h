@@ -1,14 +1,7 @@
-/*
- * box.h
- *
- *  Created on: Feb 16, 2013
- *      Author: jonathan
- */
-
-#ifndef BOX_H_
-#define BOX_H_
+#pragma once
 
 #include "dynamics_problem.hpp"
+#include "ipi/sco/modeling_utils.hpp"
 
 namespace trajopt {
 namespace dynamics {
@@ -71,56 +64,34 @@ struct BoxProperties {
   Matrix3d I_body_inv;
 };
 
-struct ContactTrajVars {
+struct BoxGroundContactTrajVars {
   VarArray p; // contact point (local frame)
   VarArray f; // contact force (world frame)
 
-  ContactTrajVars(int timesteps) {
+  BoxGroundContactTrajVars(int timesteps) {
     p.resize(timesteps, 3);
     f.resize(timesteps, 3);
   }
 };
-//typedef boost::shared_ptr<ContactTrajVars> ContactTrajVarsPtr;
+//typedef boost::shared_ptr<BoxGroundContactTrajVars> BoxGroundContactTrajVarsPtr;
 
 
 // box state at single timestep
 struct ContactState {
   static inline int Dim() { return 6; }
 };
-struct BoxGroundContact {
-  DynamicsProblem *m_prob;
-  ContactTrajVars m_trajvars;
+struct Box; struct Ground;
+struct BoxGroundContact : public Contact {
+  Box *m_box;
+  Ground *m_ground;
+  BoxGroundContactTrajVars m_trajvars;
 
-  BoxGroundContact(DynamicsProblem *prob) : m_prob(prob), m_trajvars(prob->m_timesteps) { }
+  BoxGroundContact(const string &name, Box *box, Ground *ground);
+  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix);
+  int setVariables(const vector<Var> &vars, int start_pos);
+  void addConstraintsToModel();
 
-  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="ground_box_contact") {
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_p_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_f_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-    }
-  }
-
-  int setVariables(const vector<Var> &vars, int start_pos) {
-    int k = start_pos;
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.p(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.f(t,i) = vars[k++];
-      }
-    }
-    assert(k - start_pos == m_prob->m_timesteps*ContactState::Dim());
-    return k;
-  }
+  AffExpr getForceExpr(int t, int i);
 };
 typedef boost::shared_ptr<BoxGroundContact> BoxGroundContactPtr;
 
@@ -136,137 +107,45 @@ public:
   BoxStateTrajVars m_trajvars;
   BoxState m_init_state;
 
-  Box(DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state) : m_prob(prob), m_props(props), m_trajvars(prob->m_timesteps), m_init_state(init_state) { }
+  OR::KinBodyPtr m_kinbody;
+
+  Box(const string &name, DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state);
   virtual ~Box() { }
 
+  vector<ContactPtr> m_contacts;
   // ground hack for now
-  vector<BoxGroundContactPtr> m_ground_conts;
-  void registerGroundContact() {
-    BoxGroundContactPtr ctv(new BoxGroundContact(m_prob));
-    m_ground_conts.push_back(ctv);
-  }
-  void addGroundNonpenetrationCnts(double ground_z);
+//  vector<BoxGroundContactPtr> m_ground_conts;
+//  void registerGroundContact() {
+//    BoxGroundContactPtr ctv(new BoxGroundContact(this));
+//    m_ground_conts.push_back(ctv);
+//  }
+//  void addGroundNonpenetrationCnts(double ground_z);
   // end ground hack
 
-  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box") {
-    int init_size = out_names.size();
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_x_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_p_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_force_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 4; ++i) {
-        out_names.push_back((boost::format("%s_r_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_L_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-      for (int i = 0; i < 3; ++i) {
-        out_names.push_back((boost::format("%s_torque_%i_%i") % name_prefix % t % i).str());
-        out_vlower.push_back(-INFINITY);
-        out_vupper.push_back(INFINITY);
-      }
-    }
-
-    for (int z = 0; z < m_ground_conts.size(); ++z) {
-      m_ground_conts[z]->fillVarNamesAndBounds(out_names, out_vlower, out_vupper, (boost::format("%s_contact_%d") % name_prefix % z).str());
-    }
-
-    assert(out_names.size() - init_size == m_prob->m_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
-  }
-
-  int setVariables(const vector<Var> &vars, int start_pos) {
-    int k = start_pos;
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.x(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.p(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.force(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 4; ++i) {
-        m_trajvars.r(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.L(t,i) = vars[k++];
-      }
-      for (int i = 0; i < 3; ++i) {
-        m_trajvars.torque(t,i) = vars[k++];
-      }
-    }
-    for (int z = 0; z < m_ground_conts.size(); ++z) {
-      k = m_ground_conts[z]->setVariables(vars, k);
-    }
-    /*
-    cout << k - start_pos << endl;
-    cout << m_prob->m_timesteps << endl;
-    cout << BoxState::Dim() << endl;
-    cout << m_ground_conts.size() << endl;
-    cout << ContactState::Dim() << endl;*/
-    assert(k - start_pos == m_prob->m_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
-    return k;
-  }
-
-  void addConstraintsToModel() {
-    ModelPtr model = m_prob->getModel();
-    const double dt = m_prob->m_dt;
-    // initial conditions
-    for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.x(0,i) - m_init_state.x(i), "");
-    for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.p(0,i) - m_init_state.p(i), "");
-    for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.r(0,i) - m_init_state.r.vec()(i), "");
-    model->addEqCnt(m_trajvars.r(0,3) - m_init_state.r.w(), "");
-    for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.L(0,i) - m_init_state.L(i), "");
-    // integration (implicit euler)
-    for (int t = 1; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.x(t,i) - m_trajvars.x(t-1,i) - dt/m_props.mass*m_trajvars.p(t,i), "");
-      for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.p(t,i) - m_trajvars.p(t-1,i) - dt*m_trajvars.force(t,i), "");
-      // TODO: torque
-    }
-    // forces
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-        AffExpr force_i;
-        force_i.constant += m_prob->m_gravity(i);
-        // force from ground contacts
-        for (int z = 0; z < m_ground_conts.size(); ++z) {
-       //   force_i = force_i + m_ground_conts[z]->m_trajvars.f(t,i);
-        }
-        // TODO: add other forces here
-        model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_i, "");
-      }
-    }
-    // torques
-    /*
-    for (int t = 0; t < m_prob->m_timesteps; ++t) {
-      for (int i = 0; i < 3; ++i) {
-      }
-    }
-    */
-
-    model->update();
-  }
+  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box");
+  int setVariables(const vector<Var> &vars, int start_pos);
+  void addConstraintsToModel();
+  void addToRave();
 
 private:
 };
 typedef boost::shared_ptr<Box> BoxPtr;
+
+class Ground : public DynamicsObject {
+public:
+  double m_z;
+  DynamicsProblem *m_prob;
+  OR::KinBodyPtr m_kinbody;
+
+  Ground(const string &name, DynamicsProblem *prob, double z) : m_prob(prob), m_z(z), DynamicsObject(name) { }
+  virtual ~Ground() { }
+
+  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) { }
+  int setVariables(const vector<Var> &vars, int start_pos) { return start_pos; }
+  void addConstraintsToModel() { }
+  void addToRave();
+};
+typedef boost::shared_ptr<Ground> GroundPtr;
 
 // nonpenetration constraint for a single timestep--lowest point on box must have z-value >= ground z-value
 class BoxGroundConstraint;
@@ -291,47 +170,10 @@ public:
         INEQ,
         (boost::format("%s_%d") % name_prefix % t).str())
   { }
-
-private:
-
 };
 typedef boost::shared_ptr<BoxGroundConstraint> BoxGroundConstraintPtr;
 
 
-VectorXd BoxGroundConstraintErrCalc::operator()(const VectorXd &vals) const {
-  // TODO: use some sort of view?
-  //MatrixXd box_x(m_cnt->m_prob->m_timesteps, 3), box_r(m_cnt->m_prob->m_timesteps, 4);
-  //int k = readIntoMatrix(vals, box_r, readIntoMatrix(vals, box_x, 0));
-  //assert(k == vals.size());
-  assert(vals.size() == 7);
-  Vector3d box_x = vals.block<3,1>(0,0);
-  Quaterniond box_r = toQuat(vals.block<4,1>(3,0));
-
-  // TODO: take rotation into account
-  return makeVector1d(positivePart(m_cnt->m_ground_z - (box_x(2) - m_cnt->m_box->m_props.half_extents(2))));
-}
-
-VarVector BoxGroundConstraintErrCalc::buildVarVector(Box *box, int t) {
-  VarVector v;
-  for (int i = 0; i < 3; ++i) {
-    v.push_back(box->m_trajvars.x(t,i));
-  }
-  for (int i = 0; i < 4; ++i) {
-    v.push_back(box->m_trajvars.r(t,i));
-  }
-  return v;
-}
-
-
-void Box::addGroundNonpenetrationCnts(double ground_z) {
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addConstr(ConstraintPtr(new BoxGroundConstraint(m_prob, ground_z, this, t)));
-  }
-}
-
 
 } // namespace dynamics
 } // namespace trajopt
-
-
-#endif /* BOX_H_ */
