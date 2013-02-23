@@ -16,3 +16,5 @@ target_link_libraries(test_dynamics sco trajopt ${Boost_SYSTEM_LIBRARY} ${Boost_
 
 add_executable(test_box_dynamics test_box_dynamics.cpp)
 target_link_libraries(test_box_dynamics dynamics)
+
+add_executable(test_quat test_quat.cpp)

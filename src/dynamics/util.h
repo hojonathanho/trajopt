@@ -22,14 +22,13 @@ inline OR::Transform toOR(const Vector3d &x, const Quaterniond &q) {
   return OR::Transform(toOR(q), toOR(x));
 }
 
-template<typename Derived>
-inline Quaterniond toQuat(const DenseBase<Derived> &v) {
-  assert(v.size() == 4);
-  return Quaterniond(v(3), v(0), v(1), v(2));
-}
-
-inline Vector4d quatToVec(const Quaterniond &q) {
-  return Vector4d(q.x(), q.y(), q.z(), q.w());
+inline Quaterniond getQuat(const vector<double>& x, const VarVector& vars) {
+  Quaterniond q;
+  assert(vars.size() == 4);
+  for (int i = 0; i < 4; ++i) {
+    q.coeffs()(i) = vars[i].value(x);
+  }
+  return q;
 }
 
 inline Quaterniond propagatorQuat(const Vector3d& w, double dt) {

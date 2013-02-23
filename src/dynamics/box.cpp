@@ -82,6 +82,10 @@ AffExpr BoxGroundContact::getForceExpr(int t, int i) {
   return AffExpr(m_trajvars.f(t,i));
 }
 
+vector<DynamicsObject*> BoxGroundContact::getAffectedObjects() {
+  return vector<DynamicsObject*>{m_box, m_ground};
+}
+
 Box::Box(const string &name, DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state) :
   m_prob(prob), m_props(props), m_trajvars(prob->m_timesteps), m_init_state(init_state), DynamicsObject(name) { }
 
@@ -119,13 +123,7 @@ void Box::fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_v
       out_vupper.push_back(INFINITY);
     }
   }
-
-//  for (int z = 0; z < m_ground_conts.size(); ++z) {
-//    m_ground_conts[z]->fillVarNamesAndBounds(out_names, out_vlower, out_vupper, (boost::format("%s_contact_%d") % name_prefix % z).str());
-//  }
-
-//  assert(out_names.size() - init_size == m_prob->m_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
-    assert(out_names.size() - init_size == m_prob->m_timesteps*BoxState::Dim());
+  assert(out_names.size() - init_size == m_prob->m_timesteps*BoxState::Dim());
 }
 
 
@@ -142,7 +140,7 @@ void Box::fillInitialSolution(vector<double> &out) {
       out.push_back(m_init_state.force(i));
     }
     for (int i = 0; i < 4; ++i) {
-      out.push_back(quatToVec(m_init_state.q)(i));
+      out.push_back(m_init_state.q.coeffs()(i));
     }
     for (int i = 0; i < 3; ++i) {
       out.push_back(m_init_state.w(i));
@@ -175,16 +173,12 @@ int Box::setVariables(const vector<Var> &vars, int start_pos) {
       m_trajvars.torque(t,i) = vars[k++];
     }
   }
-//  for (int z = 0; z < m_ground_conts.size(); ++z) {
-//    k = m_ground_conts[z]->setVariables(vars, k);
-//  }
   /*
   cout << k - start_pos << endl;
   cout << m_prob->m_timesteps << endl;
   cout << BoxState::Dim() << endl;
   cout << m_ground_conts.size() << endl;
   cout << ContactState::Dim() << endl;*/
-//  assert(k - start_pos == m_prob->m_timesteps*(BoxState::Dim() + m_ground_conts.size()*ContactState::Dim()));
   assert(k - start_pos == m_prob->m_timesteps*BoxState::Dim());
   return k;
 }
@@ -195,8 +189,7 @@ void Box::addConstraintsToModel() {
   // initial conditions
   for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.x(0,i) - m_init_state.x(i), "");
   for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.v(0,i) - m_init_state.v(i), "");
-  for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.q(0,i) - m_init_state.q.vec()(i), "");
-  model->addEqCnt(m_trajvars.q(0,3) - m_init_state.q.w(), "");
+  for (int i = 0; i < 4; ++i) model->addEqCnt(m_trajvars.q(0,i) - m_init_state.q.coeffs()(i), "");
   for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.w(0,i) - m_init_state.w(i), "");
   // integration (implicit euler)
   for (int t = 1; t < m_prob->m_timesteps; ++t) {
@@ -207,25 +200,20 @@ void Box::addConstraintsToModel() {
 //      new QuatIntegrationConstraint(dt, m_trajvars.q.row(t), m_trajvars.q.row(t-1), m_trajvars.w.row(t), (boost::format("qint_%d") % t).str())
 //    ));
     // HACK: fixed rotation
-    for (int i = 0; i < 3; ++i) model->addEqCnt(AffExpr(m_trajvars.q(t,i)), "");
-    model->addEqCnt(m_trajvars.q(t,3) - 1, "");
+    for (int i = 0; i < 4; ++i) model->addEqCnt(AffExpr(m_trajvars.q(t,i)) - m_init_state.q.coeffs()(i), "");
 
     for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.w(t,i) - m_trajvars.w(t-1,i) - dt*m_trajvars.torque(t,i), ""); //FIXME: inertia
   }
   // forces
   for (int t = 0; t < m_prob->m_timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
-      AffExpr force_i;
-      force_i.constant += m_prob->m_gravity(i);
+      AffExpr force_t_i(m_prob->m_gravity(i));
       // force from contacts
-      for (ContactPtr &contact : m_contacts) {
-        exprInc(force_i, contact->getForceExpr(t,i));
+      for (Contact *contact : m_contacts) {
+        exprInc(force_t_i, contact->getForceExpr(t,i));
       }
-//      for (BoxGroundContactPtr &ground_cont : m_ground_conts) {
-//        exprInc(force_i, ground_cont->m_trajvars.f(t,i));
-//      }
       // TODO: add other forces here
-      model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_i, "");
+      model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_t_i, "");
     }
   }
   // torques
@@ -235,10 +223,6 @@ void Box::addConstraintsToModel() {
     }
   }
   */
-
-//  for (BoxGroundContactPtr &ground_cont : m_ground_conts) {
-//    ground_cont->addConstraintsToModel();
-//  }
 
   model->update();
 }
@@ -253,6 +237,12 @@ void Box::addToRave() {
   m_kinbody->SetTransform(OR::Transform(toOR(m_init_state.q), toOR(m_init_state.x)));
 }
 
+void Box::setRaveState(const vector<double> &x, int t) {
+  Vector3d x_val(getVec(x, m_trajvars.x.row(t)));
+  Quaterniond q_val(getQuat(x, m_trajvars.q.row(t)));
+  m_kinbody->SetTransform(toOR(x_val, q_val));
+}
+
 //template<class T>
 //bool in(const T *a, const vector<boost::shared_ptr<T> > &b) {
 //  for (int i = 0; i < b.size(); ++i) {
@@ -263,20 +253,15 @@ void Box::addToRave() {
 //  return false;
 //}
 
-Collision invertCollision(const Collision &c) {
-  Collision d = c;
-  d.linkA = c.linkB;
-  d.linkB = c.linkA;
-  d.ptA = c.ptB;
-  d.ptB = c.ptA;
-  d.normalB2A = -c.normalB2A;
-  return d;
+Collision flipCollision(const Collision &c) {
+  return Collision(c.linkB, c.linkA, c.ptB, c.ptA, -c.normalB2A, c.distance, c.weight, c.time);
 }
 
 // output convention: A is the box, B is the ground
-static Collision checkBoxGroundCollision(const OR::Transform &trans, OR::KinBodyPtr box, OR::KinBodyPtr ground, CollisionCheckerPtr cc) {
-  box->SetTransform(trans);
-
+static int calls = 0;
+static Collision checkBoxGroundCollision(OR::KinBodyPtr box, OR::KinBodyPtr ground, CollisionCheckerPtr cc) {
+  ++calls;
+  cout << "COLLISION CHECKS: " << calls << endl;
   vector<Collision> collisions;
   cc->BodyVsAll(*box, collisions);
   cout << "NUM COLLISIONS: " << collisions.size() << endl;
@@ -286,18 +271,21 @@ static Collision checkBoxGroundCollision(const OR::Transform &trans, OR::KinBody
     if (c.linkB == ground_link) {
       return c;
     } else if (c.linkA == ground_link) {
-      return invertCollision(c);
+      return flipCollision(c);
     }
   }
   return Collision(NULL, NULL, OR::Vector(), OR::Vector(), OR::Vector(), 0.);
 }
+static Collision checkBoxGroundCollision(const OR::Transform &trans, OR::KinBodyPtr box, OR::KinBodyPtr ground, CollisionCheckerPtr cc) {
+  box->SetTransform(trans);
+  return checkBoxGroundCollision(box, ground, cc);
+}
 
 VectorXd BoxGroundConstraintNDErrCalc::operator()(const VectorXd &vals) const {
-
   assert(vals.size() == 7);
   Vector3d box_x = vals.block<3,1>(0,0);
-  Quaterniond box_r = toQuat(vals.block<4,1>(3,0));
-  cout << "vals " << box_x.transpose() << " | " << quatToVec(box_r).transpose() << endl;
+  Quaterniond box_r(vals.block<4,1>(3,0));
+  cout << "vals " << box_x.transpose() << " | " << box_r.coeffs().transpose() << endl;
 
   m_cnt->m_prob->m_cc->SetContactDistance(0.1);
   Collision col(checkBoxGroundCollision(toOR(box_x, box_r), m_cnt->m_box->m_kinbody, m_cnt->m_ground->m_kinbody, m_cnt->m_prob->m_cc));
@@ -305,22 +293,6 @@ VectorXd BoxGroundConstraintNDErrCalc::operator()(const VectorXd &vals) const {
     return makeVector1d(-col.distance);
   }
   return makeVector1d(0);
-//
-//  m_cnt->m_box->m_kinbody->SetTransform(toOR(box_x, box_r));
-//
-//  m_cnt->m_prob->m_cc->SetContactDistance(0.);
-//  vector<Collision> collisions;
-//  m_cnt->m_prob->m_cc->BodyVsAll(*m_cnt->m_box->m_kinbody, collisions);
-//  cout << "NUM COLLISIONS: " << collisions.size() << endl;
-//  const OR::KinBody::Link* ground_link = m_cnt->m_ground->m_kinbody->GetLinks()[0].get();
-//  for (Collision &c : collisions) {
-//    cout << "collision: " << c.linkA->GetName() << ' ' << c.linkB->GetName() << ' ' << c.distance << endl;
-//    if (c.linkA == ground_link || c.linkB == ground_link) {
-//      cout << "COLLISION! " << c.distance << endl;
-//      return makeVector1d(abs(c.distance));
-//    }
-//  }
-//  return makeVector1d(0);
 }
 
 VarVector BoxGroundConstraintNDErrCalc::buildVarVector(Box *box, int t) {
@@ -350,12 +322,13 @@ BoxGroundConstraint::BoxGroundConstraint(DynamicsProblem *prob, Box *box, Ground
 { }
 
 vector<double> BoxGroundConstraint::value(const vector<double>& x) {
-  Vector3d box_x = getVec(x, m_box->m_trajvars.x.row(m_t));
-  Quaterniond box_q = toQuat(getVec(x, m_box->m_trajvars.q.row(m_t)));
-  cout << "vals " << box_x.transpose() << " | " << quatToVec(box_q).transpose() << endl;
+//  Vector3d box_x = getVec(x, m_box->m_trajvars.x.row(m_t));
+//  Quaterniond box_q(getQuat(x, m_box->m_trajvars.q.row(m_t)));
+//  cout << "vals " << box_x.transpose() << " | " << box_q.coeffs().transpose() << endl;
+  m_box->setRaveState(x, m_t);
 
   m_prob->m_cc->SetContactDistance(0.1);
-  Collision col(checkBoxGroundCollision(toOR(box_x, box_q), m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
+  Collision col(checkBoxGroundCollision(m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
   if (col.linkA != NULL) {
     return vector<double>(1, -col.distance);
   }
@@ -364,14 +337,13 @@ vector<double> BoxGroundConstraint::value(const vector<double>& x) {
 
 ConvexConstraintsPtr BoxGroundConstraint::convex(const vector<double>& x, Model* model) {
   ConvexConstraintsPtr out(new ConvexConstraints(model));
-
   Vector3d box_x = getVec(x, m_box->m_trajvars.x.row(m_t));
-  Quaterniond box_q = toQuat(getVec(x, m_box->m_trajvars.q.row(m_t)));
-  cout << "vals " << box_x.transpose() << " | " << quatToVec(box_q).transpose() << endl;
-  OR::Transform box_trans = toOR(box_x, box_q);
-
+//  Quaterniond box_q(getQuat(x, m_box->m_trajvars.q.row(m_t)));
+//  cout << "vals " << box_x.transpose() << " | " << box_q.coeffs().transpose() << endl;
+//  OR::Transform box_trans = toOR(box_x, box_q);
+  m_box->setRaveState(x, m_t);
   m_prob->m_cc->SetContactDistance(0.1);
-  Collision col(checkBoxGroundCollision(box_trans, m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
+  Collision col(checkBoxGroundCollision(m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
   if (col.linkA != NULL) {
     // TODO: rotations
     Vector3d dist_grad = toVector3d(col.normalB2A); // ... .transpose() * Identity (ignoring rotation)

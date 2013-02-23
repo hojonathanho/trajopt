@@ -63,7 +63,7 @@ struct BoxState {
     vec.block<3, 1>(0, 0) = x;
     vec.block<3, 1>(3, 0) = v;
     vec.block<3, 1>(6, 0) = force;
-    vec.block<4, 1>(9, 0) = quatToVec(q);
+    vec.block<4, 1>(9, 0) = q.coeffs();
     vec.block<3, 1>(13, 0) = w;
     vec.block<3, 1>(16, 0) = torque;
     return vec;
@@ -75,7 +75,7 @@ struct BoxState {
     bs.x = vec.block<3, 1>(0, 0);
     bs.v = vec.block<3, 1>(3, 0);
     bs.force = vec.block<3, 1>(6, 0);
-    bs.q = toQuat(vec.block<4, 1>(9, 0));
+    bs.q = Quaterniond(vec.block<4, 1>(9, 0));
     bs.w = vec.block<3, 1>(13, 0);
     bs.torque = vec.block<3, 1>(16, 0);
     return bs;
@@ -134,6 +134,7 @@ struct BoxGroundContact : public Contact {
   void addConstraintsToModel();
 
   AffExpr getForceExpr(int t, int i);
+  vector<DynamicsObject*> getAffectedObjects();
 };
 typedef boost::shared_ptr<BoxGroundContact> BoxGroundContactPtr;
 
@@ -154,13 +155,16 @@ public:
   Box(const string &name, DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state);
   virtual ~Box() { }
 
-  vector<ContactPtr> m_contacts;
+  vector<Contact*> m_contacts;
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box");
   void fillInitialSolution(vector<double> &out);
   int setVariables(const vector<Var> &vars, int start_pos);
   void addConstraintsToModel();
+
+  void registerContact(Contact *c) { m_contacts.push_back(c); }
   void addToRave();
+  void setRaveState(const vector<double> &x, int t);
 
 private:
 };
@@ -180,6 +184,8 @@ public:
   int setVariables(const vector<Var> &vars, int start_pos) { return start_pos; }
   void addConstraintsToModel() { }
   void addToRave();
+  void setRaveState(const vector<double> &, int) { }
+  void registerContact(Contact *) { }
 };
 typedef boost::shared_ptr<Ground> GroundPtr;
 
