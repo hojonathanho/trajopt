@@ -155,14 +155,6 @@ public:
   virtual ~Box() { }
 
   vector<ContactPtr> m_contacts;
-  // ground hack for now
-//  vector<BoxGroundContactPtr> m_ground_conts;
-//  void registerGroundContact() {
-//    BoxGroundContactPtr ctv(new BoxGroundContact(this));
-//    m_ground_conts.push_back(ctv);
-//  }
-//  void addGroundNonpenetrationCnts(double ground_z);
-  // end ground hack
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix="box");
   void fillInitialSolution(vector<double> &out);
@@ -192,31 +184,47 @@ public:
 typedef boost::shared_ptr<Ground> GroundPtr;
 
 // nonpenetration constraint for a single timestep--lowest point on box must have z-value >= ground z-value
-class BoxGroundConstraint;
-struct BoxGroundConstraintErrCalc : public VectorOfVector {
-  BoxGroundConstraint *m_cnt;
-  BoxGroundConstraintErrCalc(BoxGroundConstraint *cnt) : m_cnt(cnt) { }
+class BoxGroundConstraintND;
+struct BoxGroundConstraintNDErrCalc : public VectorOfVector {
+  BoxGroundConstraintND *m_cnt;
+  BoxGroundConstraintNDErrCalc(BoxGroundConstraintND *cnt) : m_cnt(cnt) { }
   VectorXd operator()(const VectorXd &vals) const;
   static VarVector buildVarVector(Box *box, int t);
 };
-class BoxGroundConstraint : public ConstraintFromNumDiff {
+class BoxGroundConstraintND : public ConstraintFromNumDiff {
 public:
   DynamicsProblem *m_prob;
   Box *m_box;
   Ground *m_ground;
   int m_t;
 
-  BoxGroundConstraint(DynamicsProblem *prob, Box *box, Ground *ground, int t, const string &name_prefix="box_ground")
+  BoxGroundConstraintND(DynamicsProblem *prob, Box *box, Ground *ground, int t, const string &name_prefix="box_ground")
     : m_prob(prob), m_box(box), m_ground(ground), m_t(t),
       ConstraintFromNumDiff(
-        VectorOfVectorPtr(new BoxGroundConstraintErrCalc(this)),
-        BoxGroundConstraintErrCalc::buildVarVector(box, t),
+        VectorOfVectorPtr(new BoxGroundConstraintNDErrCalc(this)),
+        BoxGroundConstraintNDErrCalc::buildVarVector(box, t),
         INEQ,
         (boost::format("%s_%d") % name_prefix % t).str())
   { }
 };
-typedef boost::shared_ptr<BoxGroundConstraint> BoxGroundConstraintPtr;
+typedef boost::shared_ptr<BoxGroundConstraintND> BoxGroundConstraintNDPtr;
 
+
+class BoxGroundConstraint : public Constraint {
+public:
+  DynamicsProblem *m_prob;
+  Box *m_box;
+  Ground *m_ground;
+  int m_t;
+
+  BoxGroundConstraint(DynamicsProblem *prob, Box *box, Ground *ground, int t, const string &name_prefix="box_ground");
+  virtual ~BoxGroundConstraint() {}
+
+  ConstraintType type() {return INEQ;}
+  virtual vector<double> value(const vector<double>& x);
+  virtual ConvexConstraintsPtr convex(const vector<double>& x, Model* model);
+
+};
 
 
 } // namespace dynamics

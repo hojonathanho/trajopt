@@ -19,7 +19,8 @@ void PrintCollisions(const vector<Collision>& collisions) {
   RAVELOG_INFO("%i collisions found\n", collisions.size());
   for (int i=0; i < collisions.size(); ++i) {
     const Collision& c = collisions[i];
-    RAVELOG_INFO("%i: bodies: %s-%s. normal: %s. ptA: %s. distance: %.3e\n", i, c.linkA->GetName().c_str(), c.linkB->GetName().c_str(),
+    RAVELOG_INFO("%i: bodies: %s-%s. normal: %s. ptA: %s. distance: %.3e\n",
+      i, c.linkA->GetParent()->GetName().c_str(), c.linkB->GetParent()->GetName().c_str(),
       Str(c.normalB2A).c_str(), Str(c.ptA).c_str(), c.distance);
   }
 }
@@ -44,7 +45,8 @@ TEST(collision_checker, box_distance) {
   EXPECT_EQ(collisions.size(), n);\
   collisions.clear();\
   checker->BodyVsAll(*box0, collisions);\
-  EXPECT_EQ(collisions.size(), n);
+  EXPECT_EQ(collisions.size(), n);\
+  PrintCollisions(collisions);
 
   {
     checker->SetContactDistance(0);

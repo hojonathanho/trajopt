@@ -74,12 +74,14 @@ inline void varArrayIntoVector(const VarArray &a, VarVector &out) {
 }
 
 class ZeroCost : public Cost {
+public:
   ConvexObjectivePtr convex(const DblVec&, Model* model) {
     ConvexObjectivePtr out(new ConvexObjective(model));
     out->addAffExpr(AffExpr());
     return out;
   }
   double value(const DblVec&) { return 0.; }
+  ZeroCost() : Cost("zero") { }
 };
 
 } // namespace dynamics
