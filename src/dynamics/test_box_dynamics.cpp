@@ -22,8 +22,8 @@ int main(int argc, char* argv[]) {
   env->StopSimulation();
 
   DynamicsProblemPtr prob(new DynamicsProblem(env));
-  prob->setNumTimesteps(10);
-  prob->setDt(1./prob->m_timesteps);
+  prob->setNumTimesteps(15);
+  prob->setDt(1.5/prob->m_timesteps);
   prob->setGravity(Vector3d(0, 0, GRAVITY));
 
   GroundPtr ground(new Ground("ground", prob.get(), GROUND_Z));
@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
 
   cout << "x:\n" << getTraj(result->optimizer->x(), box->m_trajvars.x) << endl;
   cout << "v:\n" << getTraj(result->optimizer->x(), box->m_trajvars.v) << endl;
-  cout << "a:\n" << getTraj(result->optimizer->x(), box->m_trajvars.force) << endl;
+  cout << "force:\n" << getTraj(result->optimizer->x(), box->m_trajvars.force) << endl;
 //  cout << "q:\n" << getTraj(result->optimizer->x(), box->m_trajvars.q) << endl;
 //  cout << "w:\n" << getTraj(result->optimizer->x(), box->m_trajvars.w) << endl;
 //  cout << "T:\n" << getTraj(result->optimizer->x(), box->m_trajvars.torque) << endl;

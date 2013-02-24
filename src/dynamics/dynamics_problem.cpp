@@ -73,6 +73,7 @@ DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plott
   optimizer->cnt_tolerance_ = 1e-7;
   optimizer->trust_box_size_ = 1;
   optimizer->max_iter_ = 1000;
+  optimizer->max_merit_coeff_increases_= 100;
 
   optimizer->initialize(prob->makeInitialSolution());
   OptStatus status = optimizer->optimize();

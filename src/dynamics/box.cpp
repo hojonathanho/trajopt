@@ -51,6 +51,84 @@ int BoxGroundContact::setVariables(const vector<Var> &vars, int start_pos) {
   return k;
 }
 
+struct BoxGroundContactComplCntND : public ConstraintFromNumDiff {
+
+  struct ErrCalc : public VectorOfVector {
+    BoxGroundContactComplCntND *m_cnt;
+    ErrCalc(BoxGroundContactComplCntND *cnt) : m_cnt(cnt) { }
+    VectorXd operator()(const VectorXd &vals) const {
+      assert(vals.size() == 6);
+      Vector3d box_x_val(vals.segment<3>(0));
+      Vector3d cont_f_val(vals.segment<3>(3));
+      double zdiff = (box_x_val(2) - m_cnt->m_contact->m_box->m_props.half_extents(2)) - m_cnt->m_contact->m_ground->m_z;
+      double fnormal = cont_f_val(2);
+      double viol = zdiff * fnormal;
+      return makeVector1d(viol);
+    }
+    static VarVector buildVarVector(BoxGroundContact *c, int t) {
+      VarVector v;
+      for (int i = 0; i < 3; ++i) v.push_back(c->m_box->m_trajvars.x(t,i));
+      for (int i = 0; i < 3; ++i) v.push_back(c->m_trajvars.f(t,i));
+      return v;
+    }
+  };
+
+  BoxGroundContact *m_contact;
+  int m_t;
+
+  BoxGroundContactComplCntND(BoxGroundContact *contact, int t, const string &name_prefix)
+    : m_contact(contact), m_t(t),
+      ConstraintFromNumDiff(
+        VectorOfVectorPtr(new ErrCalc(this)),
+        ErrCalc::buildVarVector(contact, t),
+        EQ,
+        (boost::format("%s_%d") % name_prefix % t).str())
+  { }
+};
+
+
+//struct BoxGroundContactComplCntND : public ConstraintFromNumDiff {
+//
+//  struct ErrCalc : public VectorOfVector {
+//    BoxGroundContactComplCntND *m_cnt;
+//    ErrCalc(BoxGroundContactComplCntND *cnt) : m_cnt(cnt) { }
+//    VectorXd operator()(const VectorXd &vals) const {
+//      assert(vals.size() == 13);
+//      Vector3d box_x_val(vals.segment<3>(0));
+//      Quaterniond box_q_val(vals.segment<4>(3));
+//      Vector3d cont_p_val(vals.segment<3>(7));
+//      Vector3d cont_f_val(vals.segment<3>(10));
+//
+//      Vector3d cont_p_global = box_x_val + cont_p_val; // FIXME: rotations
+//      double zdiff = cont_p_global(2) - m_cnt->m_contact->m_ground->m_z;
+//      //double zdiff = (box_x_val(2) - m_cnt->m_contact->m_box->m_props.half_extents(2)) - m_cnt->m_contact->m_ground->m_z;
+//      double fnormal = cont_f_val(2);
+//      double viol = zdiff * fnormal;
+//      return makeVector1d(abs(viol));
+//    }
+//    static VarVector buildVarVector(BoxGroundContact *c, int t) {
+//      VarVector v;
+//      for (int i = 0; i < 3; ++i) v.push_back(c->m_box->m_trajvars.x(t,i));
+//      for (int i = 0; i < 4; ++i) v.push_back(c->m_box->m_trajvars.q(t,i));
+//      for (int i = 0; i < 3; ++i) v.push_back(c->m_trajvars.p(t,i));
+//      for (int i = 0; i < 3; ++i) v.push_back(c->m_trajvars.f(t,i));
+//      return v;
+//    }
+//  };
+//
+//  BoxGroundContact *m_contact;
+//  int m_t;
+//
+//  BoxGroundContactComplCntND(BoxGroundContact *contact, int t, const string &name_prefix)
+//    : m_contact(contact), m_t(t),
+//      ConstraintFromNumDiff(
+//        VectorOfVectorPtr(new ErrCalc(this)),
+//        ErrCalc::buildVarVector(contact, t),
+//        EQ,
+//        (boost::format("%s_%d") % name_prefix % t).str())
+//  { }
+//};
+
 void BoxGroundContact::addConstraintsToModel() {
   DynamicsProblem *prob = m_box->m_prob;
   ModelPtr model = prob->getModel();
@@ -58,7 +136,10 @@ void BoxGroundContact::addConstraintsToModel() {
   // box cannot penetrate ground
   for (int t = 0; t < prob->m_timesteps; ++t) {
     //prob->addConstr(ConstraintPtr(new BoxGroundConstraintND(prob, m_box, m_ground, t)));
-    prob->addConstr(ConstraintPtr(new BoxGroundConstraint(prob, m_box, m_ground, t)));
+    //prob->addConstr(ConstraintPtr(new BoxGroundConstraint(prob, m_box, m_ground, t)));
+    AffExpr exp(-m_box->m_trajvars.x(t,2));
+    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
+    model->addIneqCnt(exp, "");
   }
 
   // contact origin point must stay inside box (in local coords)
@@ -69,10 +150,20 @@ void BoxGroundContact::addConstraintsToModel() {
     }
   }
 
-  // FIXME!!!!!!!!!!!
   // contact force must have z-component >= 0
   for (int t = 0; t < prob->m_timesteps; ++t) {
     model->addIneqCnt(-m_trajvars.f(t,2), "");
+  }
+
+  // FIXME: use actual friction cone instead
+  for (int t = 0; t < prob->m_timesteps; ++t) {
+    model->addEqCnt(AffExpr(m_trajvars.f(t,0)), "");
+    model->addEqCnt(AffExpr(m_trajvars.f(t,1)), "");
+  }
+
+  // complementarity constraints
+  for (int t = 0; t < prob->m_timesteps; ++t) {
+    prob->addConstr(ConstraintPtr(new BoxGroundContactComplCntND(this, t, "box_ground_compl")));
   }
 
   model->update();
@@ -85,6 +176,7 @@ AffExpr BoxGroundContact::getForceExpr(int t, int i) {
 vector<DynamicsObject*> BoxGroundContact::getAffectedObjects() {
   return vector<DynamicsObject*>{m_box, m_ground};
 }
+
 
 Box::Box(const string &name, DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state) :
   m_prob(prob), m_props(props), m_trajvars(prob->m_timesteps), m_init_state(init_state), DynamicsObject(name) { }
@@ -212,7 +304,6 @@ void Box::addConstraintsToModel() {
       for (Contact *contact : m_contacts) {
         exprInc(force_t_i, contact->getForceExpr(t,i));
       }
-      // TODO: add other forces here
       model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_t_i, "");
     }
   }
@@ -257,6 +348,8 @@ Collision flipCollision(const Collision &c) {
   return Collision(c.linkB, c.linkA, c.ptB, c.ptA, -c.normalB2A, c.distance, c.weight, c.time);
 }
 
+static const double CONTACT_DIST = 10.;
+
 // output convention: A is the box, B is the ground
 static int calls = 0;
 static Collision checkBoxGroundCollision(OR::KinBodyPtr box, OR::KinBodyPtr ground, CollisionCheckerPtr cc) {
@@ -287,7 +380,7 @@ VectorXd BoxGroundConstraintNDErrCalc::operator()(const VectorXd &vals) const {
   Quaterniond box_r(vals.block<4,1>(3,0));
   cout << "vals " << box_x.transpose() << " | " << box_r.coeffs().transpose() << endl;
 
-  m_cnt->m_prob->m_cc->SetContactDistance(0.1);
+  m_cnt->m_prob->m_cc->SetContactDistance(CONTACT_DIST);
   Collision col(checkBoxGroundCollision(toOR(box_x, box_r), m_cnt->m_box->m_kinbody, m_cnt->m_ground->m_kinbody, m_cnt->m_prob->m_cc));
   if (col.linkA != NULL) {
     return makeVector1d(-col.distance);
@@ -327,7 +420,7 @@ vector<double> BoxGroundConstraint::value(const vector<double>& x) {
 //  cout << "vals " << box_x.transpose() << " | " << box_q.coeffs().transpose() << endl;
   m_box->setRaveState(x, m_t);
 
-  m_prob->m_cc->SetContactDistance(0.1);
+  m_prob->m_cc->SetContactDistance(CONTACT_DIST);
   Collision col(checkBoxGroundCollision(m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
   if (col.linkA != NULL) {
     return vector<double>(1, -col.distance);
@@ -342,7 +435,7 @@ ConvexConstraintsPtr BoxGroundConstraint::convex(const vector<double>& x, Model*
 //  cout << "vals " << box_x.transpose() << " | " << box_q.coeffs().transpose() << endl;
 //  OR::Transform box_trans = toOR(box_x, box_q);
   m_box->setRaveState(x, m_t);
-  m_prob->m_cc->SetContactDistance(0.1);
+  m_prob->m_cc->SetContactDistance(CONTACT_DIST);
   Collision col(checkBoxGroundCollision(m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
   if (col.linkA != NULL) {
     // TODO: rotations

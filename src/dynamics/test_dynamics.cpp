@@ -216,9 +216,9 @@ class ZeroCost : public Cost {
 
 int main(int argc, char* argv[]) {
   OptProbPtr prob(new OptProb());
-  int n_steps = 100;
-  double dt = 10.0/n_steps;
-  Vector3d init_x(0, 0, 5), init_v(0, 0, 0);
+  int n_steps = 15;
+  double dt = 1.5/n_steps;
+  Vector3d init_x(0, 0, 5-.58 -.1), init_v(0, 0, 0);
   VarArray x, v, a, ground_force;
   DblVec initSoln;
   MakeVariablesAndBounds(n_steps, dt, *prob, x, v, a, ground_force, init_x, init_v, initSoln);
