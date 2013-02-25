@@ -65,7 +65,7 @@ void CollisionChecker::IgnoreZeroStateSelfCollisions() {
 }
 
 std::ostream& operator<<(std::ostream& o, const Collision& c) {
-  o << (c.linkA ? c.linkA->GetName() : "NULL") << "--" <<  (c.linkB ? c.linkB->GetName() : "NULL") <<
+  o << (c.linkA ? (c.linkA->GetParent()->GetName() + "/" + c.linkA->GetName()) : "NULL") << "--" <<  (c.linkB ? (c.linkB->GetParent()->GetName() + "/" +c.linkB->GetName()) : "NULL") <<
       " distance: " << c.distance <<
       " normal: " << c.normalB2A <<
       " ptA: " << c.ptA <<

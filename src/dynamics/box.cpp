@@ -51,6 +51,71 @@ int BoxGroundContact::setVariables(const vector<Var> &vars, int start_pos) {
   return k;
 }
 
+AffExpr makeDerivExpr(const VectorXd& grad, const VarVector& vars, const VectorXd& curvals) {
+  assert (grad.size() == vars.size());
+  return varDot(grad, vars) - grad.dot(curvals);
+}
+
+struct ComplementarityCost : public Cost {
+  BoxGroundContact *m_contact;
+  int m_t;
+  ComplementarityCost(BoxGroundContact *contact, int t) : m_contact(contact), m_t(t) { }
+
+  virtual double value(const vector<double>& x) {
+    Vector3d box_x_val(getVec(x, m_contact->m_box->m_trajvars.x.row(m_t)));
+    Vector3d cont_f_val(getVec(x, m_contact->m_trajvars.f.row(m_t)));
+    double zdiff = (box_x_val(2) - m_contact->m_box->m_props.half_extents(2)) - m_contact->m_ground->m_z;
+    return positivePart(zdiff * cont_f_val(2));
+  }
+  virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model) {
+    VarVector box_x_vars = m_contact->m_box->m_trajvars.x.row(m_t);
+    VarVector cont_f_vars = m_contact->m_trajvars.f.row(m_t);
+    Vector3d box_x_val(getVec(x, box_x_vars));
+    Vector3d cont_f_val(getVec(x, cont_f_vars));
+    double zdiff = (box_x_val(2) - m_contact->m_box->m_props.half_extents(2)) - m_contact->m_ground->m_z;
+
+    Vector3d normalB2A(0, 0, 1);
+    AffExpr dDistOfA = makeDerivExpr(normalB2A, box_x_vars, box_x_val);
+                     //    + exprDot(m_normalB2A, exprCross(m_bodyA->m_r1_var, m_worldA - m_bodyA->m_x1_val));
+    //AffExpr dDistOfB = makeDerivExpr(-normalB2A, m_bodyB->m_x1_var, m_bodyB->m_x1_val);
+                      //   + exprDot(-m_normalB2A, exprCross(m_bodyB->m_r1_var, m_worldB - m_bodyB->m_x1_val));
+    AffExpr dist_expr = (dDistOfA + /*dDistOfB +*/ zdiff);
+
+    AffExpr final_expr = dist_expr*cont_f_val(2) + zdiff*(cont_f_vars[2] - cont_f_val(2));
+
+    cout << "analytical: " << final_expr << endl;
+
+    // test linearization numerically
+#if 1
+    VarVector all_vars = concat(box_x_vars, cont_f_vars);
+    vector<double> xtmp = x; const double eps = 1e-4;
+    AffExpr nd_final_expr(value(x));
+    for (int z = 0; z < all_vars.size(); ++z) {
+      Var v = all_vars[z];
+      int idx = v.var_rep->index;
+      xtmp[idx] += eps;
+      double v2 = value(xtmp);
+      xtmp[idx] -= 2.*eps;
+      double v1 = value(xtmp);
+      xtmp[idx] = x[idx];
+      double deriv = ((v2 - v1) / (2.*eps));
+      if (abs(deriv) < 1e-5) continue;
+      exprInc(nd_final_expr, deriv*(v - x[idx]));
+    }
+    cout << "nd: " << nd_final_expr << endl;
+    cout << "====================" << endl;
+#endif
+
+    ConvexObjectivePtr out(new ConvexObjective(model));
+    out->addHinge(final_expr, 1);
+    return out;
+
+    //GRBLinExpr compExpr = contact->m_distExpr * contact->m_fn_val + contact->m_dist * (contact->m_fn - contact->m_fn_val);
+    //addHingeCost(out, m_coeff, compExpr, model, "compl");
+
+  }
+};
+
 struct BoxGroundContactComplCntND : public ConstraintFromNumDiff {
 
   struct ErrCalc : public VectorOfVector {
@@ -129,18 +194,28 @@ struct BoxGroundContactComplCntND : public ConstraintFromNumDiff {
 //  { }
 //};
 
+class BoxGroundConstraintHack : public Constraint {
+public:
+  virtual ConstraintType type() { return INEQ; }
+  virtual vector<double> value(const vector<double>& x) {
+    double val = -m_box->m_trajvars.x(m_t,2).value(x) + m_ground->m_z + m_box->m_props.half_extents(2);
+    return vector<double>{val};
+  }
+  virtual ConvexConstraintsPtr convex(const vector<double>& x, Model* model) {
+    ConvexConstraintsPtr out(new ConvexConstraints(model));
+    AffExpr exp(-m_box->m_trajvars.x(m_t,2));
+    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
+    out->addIneqCnt(exp);
+    return out;
+  }
+
+  Box *m_box; Ground *m_ground; int m_t;
+  BoxGroundConstraintHack(Box *box, Ground *ground, int t) : m_box(box), m_ground(ground), m_t(t) { }
+};
+
 void BoxGroundContact::addConstraintsToModel() {
   DynamicsProblem *prob = m_box->m_prob;
   ModelPtr model = prob->getModel();
-
-  // box cannot penetrate ground
-  for (int t = 0; t < prob->m_timesteps; ++t) {
-    //prob->addConstr(ConstraintPtr(new BoxGroundConstraintND(prob, m_box, m_ground, t)));
-    //prob->addConstr(ConstraintPtr(new BoxGroundConstraint(prob, m_box, m_ground, t)));
-    AffExpr exp(-m_box->m_trajvars.x(t,2));
-    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
-    model->addIneqCnt(exp, "");
-  }
 
   // contact origin point must stay inside box (in local coords)
   for (int t = 0; t < prob->m_timesteps; ++t) {
@@ -161,9 +236,21 @@ void BoxGroundContact::addConstraintsToModel() {
     model->addEqCnt(AffExpr(m_trajvars.f(t,1)), "");
   }
 
+  // box cannot penetrate ground
+  for (int t = 0; t < prob->m_timesteps; ++t) {
+    //prob->addConstr(ConstraintPtr(new BoxGroundConstraintND(prob, m_box, m_ground, t)));
+   // prob->addConstr(ConstraintPtr(new BoxGroundConstraint(prob, m_box, m_ground, t)));
+//    AffExpr exp(-m_box->m_trajvars.x(t,2));
+//    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
+//    model->addIneqCnt(exp, "");
+    prob->addConstr(ConstraintPtr(new BoxGroundConstraintHack(m_box, m_ground, t)));
+    //prob->addIneqConstr(ConstraintPtr(new BoxGroundConstraintHack(m_box, m_ground, t)));
+  }
+
   // complementarity constraints
   for (int t = 0; t < prob->m_timesteps; ++t) {
-    prob->addConstr(ConstraintPtr(new BoxGroundContactComplCntND(this, t, "box_ground_compl")));
+ //   prob->addConstr(ConstraintPtr(new BoxGroundContactComplCntND(this, t, "box_ground_compl")));
+    prob->addCost(CostPtr(new ComplementarityCost(this, t)));
   }
 
   model->update();
@@ -362,8 +449,10 @@ static Collision checkBoxGroundCollision(OR::KinBodyPtr box, OR::KinBodyPtr grou
   for (Collision &c : collisions) {
     cout << "collision?: " << c.linkA->GetParent()->GetName() << ' ' << c.linkB->GetParent()->GetName() << ' ' << c.distance << endl;
     if (c.linkB == ground_link) {
+      cout << "NO FLIP" << endl;
       return c;
     } else if (c.linkA == ground_link) {
+      cout << "FLIP" << endl;
       return flipCollision(c);
     }
   }
@@ -439,10 +528,12 @@ ConvexConstraintsPtr BoxGroundConstraint::convex(const vector<double>& x, Model*
   Collision col(checkBoxGroundCollision(m_box->m_kinbody, m_ground->m_kinbody, m_prob->m_cc));
   if (col.linkA != NULL) {
     // TODO: rotations
-    Vector3d dist_grad = toVector3d(col.normalB2A); // ... .transpose() * Identity (ignoring rotation)
+    cout << col << endl;
+    Vector3d dist_grad = toVector3d(col.normalB2A).normalized(); // ... .transpose() * Identity (ignoring rotation)
     AffExpr sd(col.distance);
     exprInc(sd, varDot(dist_grad, m_box->m_trajvars.x.row(m_t)));
     exprInc(sd, -dist_grad.dot(box_x));
+    cout << "signed dist expr: " << sd << endl;
     out->addIneqCnt(-sd);
   }
   return out;
