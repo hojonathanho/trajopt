@@ -54,9 +54,12 @@ int main(int argc, char* argv[]) {
 
   DynamicsOptResultPtr result = OptimizeDynamicsProblem(prob, true);
 
-  cout << "x:\n" << getTraj(result->optimizer->x(), box->m_trajvars.x) << endl;
-  cout << "v:\n" << getTraj(result->optimizer->x(), box->m_trajvars.v) << endl;
-  cout << "force:\n" << getTraj(result->optimizer->x(), box->m_trajvars.force) << endl;
+  cout << "x1:\n" << getTraj(result->optimizer->x(), box1->m_trajvars.x) << endl;
+  cout << "v1:\n" << getTraj(result->optimizer->x(), box1->m_trajvars.v) << endl;
+  cout << "force1:\n" << getTraj(result->optimizer->x(), box1->m_trajvars.force) << endl;
+  cout << "x2:\n" << getTraj(result->optimizer->x(), box2->m_trajvars.x) << endl;
+  cout << "v2:\n" << getTraj(result->optimizer->x(), box2->m_trajvars.v) << endl;
+  cout << "force2:\n" << getTraj(result->optimizer->x(), box2->m_trajvars.force) << endl;
 //  cout << "q:\n" << getTraj(result->optimizer->x(), box->m_trajvars.q) << endl;
 //  cout << "w:\n" << getTraj(result->optimizer->x(), box->m_trajvars.w) << endl;
 //  cout << "T:\n" << getTraj(result->optimizer->x(), box->m_trajvars.torque) << endl;

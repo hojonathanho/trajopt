@@ -39,7 +39,7 @@ struct BoxGroundContact : public Contact {
   int setVariables(const vector<Var> &vars, int start_pos);
   void addConstraintsToModel();
 
-  AffExpr getForceExpr(int t, int i);
+  AffExpr getForceExpr(DynamicsObject *o, int t, int i);
   vector<DynamicsObject*> getAffectedObjects();
 };
 typedef boost::shared_ptr<BoxGroundContact> BoxGroundContactPtr;
@@ -88,6 +88,34 @@ public:
 
 };
 
+struct BoxBoxContactTrajVars {
+  VarArray p1, p2; // contact points (local frames)
+  VarArray f; // contact force (world frame) (convention: f applied on box1, -f applied on box2)
+
+  BoxBoxContactTrajVars(int timesteps) {
+    p1.resize(timesteps, 3);
+    p2.resize(timesteps, 3);
+    f.resize(timesteps, 3);
+  }
+};
+
+
+struct BoxBoxContact : public Contact {
+  DynamicsProblem *m_prob;
+  Box *m_box1, *m_box2;
+  BoxBoxContactTrajVars m_trajvars;
+
+  BoxBoxContact(const string &name, Box *box1, Box *box2);
+
+  void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix);
+  void fillInitialSolution(vector<double> &out);
+  int setVariables(const vector<Var> &vars, int start_pos);
+  void addConstraintsToModel();
+
+  AffExpr getForceExpr(DynamicsObject *o, int t, int i);
+  vector<DynamicsObject*> getAffectedObjects();
+};
+typedef boost::shared_ptr<BoxBoxContact> BoxBoxContactPtr;
 
 } // namespace dynamics
 } // namespace trajopt

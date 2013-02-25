@@ -116,9 +116,6 @@ void Box::addConstraintsToModel() {
     for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.x(t,i) - m_trajvars.x(t-1,i) - dt*m_trajvars.v(t,i), "");
     for (int i = 0; i < 3; ++i) model->addEqCnt(m_trajvars.v(t,i) - m_trajvars.v(t-1,i) - dt/m_props.mass*m_trajvars.force(t,i), "");
 
-//    m_prob->addConstr(ConstraintPtr(
-//      new QuatIntegrationConstraint(dt, m_trajvars.q.row(t), m_trajvars.q.row(t-1), m_trajvars.w.row(t), (boost::format("qint_%d") % t).str())
-//    ));
     // HACK: fixed rotation
     for (int i = 0; i < 4; ++i) model->addEqCnt(AffExpr(m_trajvars.q(t,i)) - m_init_state.q.coeffs()(i), "");
 
@@ -130,7 +127,7 @@ void Box::addConstraintsToModel() {
       AffExpr force_t_i(m_prob->m_gravity(i));
       // force from contacts
       for (Contact *contact : m_contacts) {
-        exprInc(force_t_i, contact->getForceExpr(t,i));
+        exprInc(force_t_i, contact->getForceExpr(this, t,i));
       }
       model->addEqCnt(AffExpr(m_trajvars.force(t,i)) - force_t_i, "");
     }

@@ -48,7 +48,7 @@ public:
   virtual int setVariables(const vector<Var> &vars, int start_pos) = 0;
   virtual void addConstraintsToModel() = 0;
 
-  virtual AffExpr getForceExpr(int t, int i) = 0;
+  virtual AffExpr getForceExpr(DynamicsObject *o, int t, int i) = 0;
   virtual vector<DynamicsObject*> getAffectedObjects() = 0;
 };
 typedef boost::shared_ptr<Contact> ContactPtr;
