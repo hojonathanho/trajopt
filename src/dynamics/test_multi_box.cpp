@@ -4,7 +4,8 @@
 #include "ipi/sco/optimizers.hpp"
 #include "trajopt/utils.hpp"
 #include "dynamics_problem.hpp"
-#include "box.h"
+#include "box.hpp"
+#include "contacts.hpp"
 
 using namespace ipi::sco;
 using namespace trajopt;
