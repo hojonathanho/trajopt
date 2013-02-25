@@ -9,10 +9,9 @@
 
 #include <vector>
 #include <boost/shared_ptr.hpp>
-#include "ipi/sco/sco_fwd.hpp"
-#include "ipi/sco/solver_interface.hpp"
+#include "sco/sco_fwd.hpp"
+#include "sco/solver_interface.hpp"
 
-namespace ipi {
 namespace sco {
 
 using std::vector;
@@ -151,6 +150,10 @@ public:
   virtual ~OptProb() {}
   vector<double> getCentralFeasiblePoint(const vector<double>& x);
   vector<double> getClosestFeasiblePoint(const vector<double>& x);
+  /** Some variables are actually increments, meaning that the trust region should be around zero
+  */
+  vector<bool> getIncrementMask() {return incmask_;}
+  void setIncrementMask(const vector<bool>& incmask) {incmask_ = incmask;}
 
   vector<ConstraintPtr> getConstraints() const;
   vector<CostPtr>& getCosts() {return costs_;}
@@ -160,6 +163,7 @@ public:
   vector<Var>& getVars() {return vars_;}
   int getNumCosts() {return costs_.size();}
   int getNumConstraints() {return eqcnts_.size() + ineqcnts_.size();}
+  int getNumVars() {return vars_.size();}
 
 protected:
   ModelPtr model_;
@@ -169,8 +173,9 @@ protected:
   vector<CostPtr> costs_;
   vector<ConstraintPtr> eqcnts_;
   vector<ConstraintPtr> ineqcnts_;
+  vector<bool> incmask_;
 
   OptProb(OptProb&);
 };
 
-}}
+}

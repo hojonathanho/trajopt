@@ -2,9 +2,9 @@
 #include "trajopt/kinematic_constraints.hpp"
 #include "trajopt/utils.hpp"
 #include "trajopt/rave_utils.hpp"
-#include "ipi/logging.hpp"
-#include "ipi/sco/expr_ops.hpp"
-#include "ipi/sco/modeling_utils.hpp"
+#include "utils/logging1.hpp"
+#include "sco/expr_ops.hpp"
+#include "sco/modeling_utils.hpp"
 #include <boost/format.hpp>
 #include <boost/bind.hpp>
 #include <iostream>
@@ -13,7 +13,7 @@
 #include "utils/eigen_conversions.hpp"
 #include "utils/eigen_slicing.hpp"
 using namespace std;
-using namespace ipi::sco;
+using namespace sco;
 using namespace Eigen;
 using namespace util;
 
@@ -60,7 +60,7 @@ void makeTrajVariablesAndBounds(int n_steps, RobotAndDOFPtr manip, OptProb& prob
   int n_dof = manip->GetDOF();
   DblVec lower, upper;
   manip->GetDOFLimits(lower, upper);
-  IPI_LOG_INFO("Dof limits: %s, %s", Str(lower), Str(upper));
+  LOG_INFO("Dof limits: %s, %s", CSTR(lower), CSTR(upper));
   vector<double> vlower, vupper;
   vector<string> names;
   for (int i=0; i < n_steps; ++i) {
@@ -148,10 +148,12 @@ struct CartPoseErrCalculator : public VectorOfVector {
   OR::Transform pose_inv_;
   RobotAndDOFPtr manip_;
   OR::KinBody::LinkPtr link_;
-  CartPoseErrCalculator(const OR::Transform& pose, RobotAndDOFPtr manip, OR::KinBody::LinkPtr link) :
+  VectorXd coeffs_;
+  CartPoseErrCalculator(const OR::Transform& pose, RobotAndDOFPtr manip, OR::KinBody::LinkPtr link, const VectorXd& coeffs) :
   pose_inv_(pose.inverse()),
   manip_(manip),
-  link_(link)
+  link_(link),
+  coeffs_(coeffs)
   {}
 //  CartPoseCostCalculator(const CartPoseCostCalculator& other) : pose_(other.pose_), manip_(other.manip_), rs_(other.rs_) {}
   VectorXd operator()(const VectorXd& dof_vals) const {
@@ -159,14 +161,14 @@ struct CartPoseErrCalculator : public VectorOfVector {
     OR::Transform newpose = link_->GetTransform();
 
     OR::Transform pose_err = pose_inv_ * newpose;
-    VectorXd err = concat(rotVec(pose_err.rot), toVector3d(pose_err.trans));
+    VectorXd err = coeffs_.cwiseProduct(concat(rotVec(pose_err.rot), toVector3d(pose_err.trans)));
     return err;
   }
 };
 
 CartPoseCost::CartPoseCost(const VarVector& vars, const OR::Transform& pose, const Vector3d& rot_coeffs,
     const Vector3d& pos_coeffs, RobotAndDOFPtr manip, KinBody::LinkPtr link) :
-    CostFromNumDiffErr(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link)),
+    CostFromNumDiffErr(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link, VectorXd::Ones(6))),
         vars, concat(rot_coeffs, pos_coeffs), ABS, "CartPose")
 {}
 void CartPoseCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
@@ -181,9 +183,9 @@ void CartPoseCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<O
 
 
 CartPoseConstraint::CartPoseConstraint(const VarVector& vars, const OR::Transform& pose,
-    RobotAndDOFPtr manip, KinBody::LinkPtr link, const BoolVec& enabled) :
-    ConstraintFromNumDiff(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link)),
-        vars, EQ, "CartPose", enabled)
+    RobotAndDOFPtr manip, KinBody::LinkPtr link, const VectorXd& coeffs) :
+    ConstraintFromNumDiff(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link, coeffs)),
+        vars, EQ, "CartPose")
 {
 }
 

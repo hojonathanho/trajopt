@@ -11,7 +11,6 @@ Gurobi backend
 struct _GRBmodel;
 typedef struct _GRBmodel GRBmodel;
 
-namespace ipi {
 namespace sco {
 
 class GurobiModel : public Model {
@@ -35,6 +34,7 @@ public:
   void update();
 
   void setVarBounds(const Var&, double lower, double upper);
+  void setVarBounds(const std::vector<Var>&, const std::vector<double>& lower, const std::vector<double>& upper);
 
   double getVarValue(const Var&) const;
   vector<double> getVarValues(const vector<Var>&) const;
@@ -53,6 +53,5 @@ public:
 };
 
 
-}
 }
 

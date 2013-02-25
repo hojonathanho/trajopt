@@ -1,8 +1,8 @@
 #include "trajopt/problem_description.hpp"
 #include "trajopt/common.hpp"
 #include <boost/foreach.hpp>
-#include "ipi/logging.hpp"
-#include "ipi/sco/expr_ops.hpp"
+#include "utils/logging1.hpp"
+#include "sco/expr_ops.hpp"
 #include "trajopt/kinematic_constraints.hpp"
 #include "trajopt/collision_avoidance.hpp"
 #include "trajopt/rave_utils.hpp"
@@ -136,7 +136,7 @@ void CostInfo::RegisterMaker(const std::string& type, MakerFunc f) {
 void fromJson(const Json::Value& v, CntInfoPtr& cnt) {
   string type;
   childFromJson(v, type, "type");
-  IPI_LOG_DEBUG("reading constraint: %s", type);
+  LOG_DEBUG("reading constraint: %s", type.c_str());
   cnt = CntInfo::fromName(type);
   if (!cnt) PRINT_AND_THROW( boost::format("failed to construct constraint named %s")%type );
   cnt->fromJson(v);
@@ -407,7 +407,7 @@ CntInfoPtr PoseCntInfo::create() {
 }
 void PoseCntInfo::hatch(TrajOptProb& prob) {
   VectorXd coeffs(6); coeffs << rot_coeffs, pos_coeffs;
-  prob.addConstr(ConstraintPtr(new CartPoseConstraint(prob.GetVarRow(timestep), toRaveTransform(wxyz, xyz), prob.GetRAD(), link, toMask(coeffs))));
+  prob.addConstr(ConstraintPtr(new CartPoseConstraint(prob.GetVarRow(timestep), toRaveTransform(wxyz, xyz), prob.GetRAD(), link, coeffs)));
 }
 
 void CartVelCntInfo::fromJson(const Value& v) {
@@ -488,7 +488,6 @@ void ContinuousCollisionCostInfo::fromJson(const Value& v) {
   childFromJson(params, last_step, "last_step", n_steps-1);
   childFromJson(params, coeffs, "coeffs");
   int n_terms = last_step - first_step;
-  cout << "n terms: " << n_terms << endl;
   if (coeffs.size() == 1) coeffs = DblVec(n_terms, coeffs[0]);
   else if (coeffs.size() != n_terms) {
     PRINT_AND_THROW (boost::format("wrong size: coeffs. expected %i got %i")%n_terms%coeffs.size());

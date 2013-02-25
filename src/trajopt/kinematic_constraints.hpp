@@ -1,13 +1,13 @@
 #pragma once
-#include "ipi/sco/modeling.hpp"
-#include "ipi/sco/modeling_utils.hpp"
-#include "ipi/sco/sco_fwd.hpp"
+#include "sco/modeling.hpp"
+#include "sco/modeling_utils.hpp"
+#include "sco/sco_fwd.hpp"
 #include <Eigen/Core>
 #include "trajopt/common.hpp"
 #include <openrave/openrave.h>
 namespace trajopt {
 
-using namespace ipi::sco;
+using namespace sco;
 typedef BasicArray<Var> VarArray;
 
 void makeTrajVariablesAndBounds(int n_steps, const RobotAndDOF& manip, OptProb& prob_out, VarArray& vars_out);
@@ -24,7 +24,7 @@ public:
 };
 class CartPoseConstraint : public ConstraintFromNumDiff, public Plotter {
 public:
-  CartPoseConstraint(const VarVector& vars, const OR::Transform& pose, RobotAndDOFPtr manip, KinBody::LinkPtr link, const BoolVec& enabled=BoolVec());
+  CartPoseConstraint(const VarVector& vars, const OR::Transform& pose, RobotAndDOFPtr manip, KinBody::LinkPtr link, const VectorXd& coeffs);
   void Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles);
 };
 

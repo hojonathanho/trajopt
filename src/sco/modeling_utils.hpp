@@ -13,7 +13,6 @@ using numerical derivatives or user-defined analytic derivatives.
 
 
 
-namespace ipi {
 namespace sco {
 
 enum PenaltyType {
@@ -55,7 +54,7 @@ protected:
 
 class ConstraintFromNumDiff : public Constraint {
 public:
-  ConstraintFromNumDiff(VectorOfVectorPtr f, const VarVector& vars, ConstraintType type, const std::string& name, const BoolVec& enabled = BoolVec());
+  ConstraintFromNumDiff(VectorOfVectorPtr f, const VarVector& vars, ConstraintType type, const std::string& name);
   vector<double> value(const vector<double>& x);
   ConvexConstraintsPtr convex(const vector<double>& x, Model* model);
   ConstraintType type() {return type_;}
@@ -64,9 +63,7 @@ protected:
   VarVector vars_;
   ConstraintType type_;
   double epsilon_;
-  BoolVec enabled_;
 };
 
 
-}
 }

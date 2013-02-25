@@ -5,7 +5,7 @@
 #include "utils/stl_to_string.hpp"
 #include "trajopt/common.hpp"
 #include "trajopt/problem_description.hpp"
-#include "ipi/sco/optimizers.hpp"
+#include "sco/optimizers.hpp"
 #include "trajopt/rave_utils.hpp"
 #include "osgviewer/osgviewer.hpp"
 #include <ctime>
@@ -90,7 +90,7 @@ TEST_F(PlanningTest, numerical_ik1) {
   opt.optimize();
   RAVELOG_INFO("planning time: %.3f\n", GetClock()-tStart);
   printf("finally:\n");
-  if (plotting) PlotCallback(*prob)(opt.x());
+  if (plotting) PlotCallback(*prob)(NULL, opt.x());
 }
 
 TEST_F(PlanningTest, arm_around_table) {
@@ -117,7 +117,7 @@ TEST_F(PlanningTest, arm_around_table) {
   CollisionChecker::GetOrCreate(*env)->ContinuousCheckTrajectory(getTraj(opt.x(), prob->GetVars()), *pci.rad, collisions);
   RAVELOG_INFO("number of continuous collisions: %i\n", collisions.size());
 
-  if (plotting) PlotCallback(*prob)(opt.x());
+  if (plotting) PlotCallback(*prob)(NULL, opt.x());
 
 }
 

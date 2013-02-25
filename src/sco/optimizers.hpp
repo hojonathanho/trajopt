@@ -6,7 +6,6 @@
  * Algorithms for non-convex, constrained optimization
  */
 
-namespace ipi{
 namespace sco {
 
 using std::string;
@@ -33,6 +32,7 @@ inline string statusToString(OptStatus status) {
 struct OptResults {
   DblVec x; // solution estimate
   OptStatus status;
+  double total_cost;
   vector<double> cost_vals;
   DblVec cnt_viols;
   int n_func_evals, n_qp_solves;
@@ -56,15 +56,15 @@ public:
   virtual OptStatus optimize() = 0;
   virtual ~Optimizer() {}
   virtual void setProblem(OptProbPtr prob) {prob_ = prob;}
-  void initialize(const vector<double>& x) {results_.clear(); results_.x = x;}
+  void initialize(const vector<double>& x);
   vector<double>& x() {return results_.x;}
   OptResults& results() {return results_;}
 
-  typedef boost::function<void(const DblVec&)> Callback;
+  typedef boost::function<void(OptProb*, DblVec&)> Callback;
   void addCallback(const Callback& f); // called before each iteration
 protected:
   vector<Callback> callbacks_;
-  void callCallbacks(const DblVec& x);
+  void callCallbacks(DblVec& x);
   OptProbPtr prob_;
   OptResults results_;
 };
@@ -107,5 +107,4 @@ protected:
 };
 
 
-}
 }
