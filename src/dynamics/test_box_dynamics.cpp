@@ -1,7 +1,6 @@
 #include <iostream>
 #include <openrave-core.h>
-#include "ipi/logging.hpp"
-#include "ipi/sco/optimizers.hpp"
+#include "sco/optimizers.hpp"
 #include "trajopt/utils.hpp"
 #include "dynamics_problem.hpp"
 #include "box.hpp"

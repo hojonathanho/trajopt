@@ -114,6 +114,8 @@ struct BoxBoxContact : public Contact {
 
   AffExpr getForceExpr(DynamicsObject *o, int t, int i);
   vector<DynamicsObject*> getAffectedObjects();
+
+  void calcContactDistAndNormal(const vector<double> &x, int t, double &out_dist, Vector3d &out_normal);
 };
 typedef boost::shared_ptr<BoxBoxContact> BoxBoxContactPtr;
 

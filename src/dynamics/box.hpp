@@ -1,7 +1,7 @@
 #pragma once
 
 #include "dynamics_problem.hpp"
-#include "ipi/sco/modeling_utils.hpp"
+#include "sco/modeling_utils.hpp"
 
 namespace trajopt {
 namespace dynamics {

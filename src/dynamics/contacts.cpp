@@ -1,11 +1,12 @@
 #include "contacts.hpp"
 
 #include "trajopt/utils.hpp"
-#include "ipi/sco/expr_vec_ops.hpp"
+#include "sco/expr_vec_ops.hpp"
 
 namespace trajopt {
 namespace dynamics {
 
+#define NO_GRAVITY
 
 BoxGroundContact::BoxGroundContact(const string &name, Box *box, Ground *ground) :
     m_box(box), m_ground(ground), m_trajvars(box->m_prob->m_timesteps), Contact(name) {
@@ -220,6 +221,7 @@ void BoxGroundContact::addConstraintsToModel() {
   DynamicsProblem *prob = m_box->m_prob;
   ModelPtr model = prob->getModel();
 
+#ifndef NO_GRAVITY
   // contact origin point must stay inside box (in local coords)
   for (int t = 0; t < prob->m_timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
@@ -238,6 +240,7 @@ void BoxGroundContact::addConstraintsToModel() {
     model->addEqCnt(AffExpr(m_trajvars.f(t,0)), "");
     model->addEqCnt(AffExpr(m_trajvars.f(t,1)), "");
   }
+#endif
 
   // box cannot penetrate ground
   for (int t = 0; t < prob->m_timesteps; ++t) {
@@ -249,18 +252,24 @@ void BoxGroundContact::addConstraintsToModel() {
     prob->addConstr(ConstraintPtr(new BoxGroundConstraintSimple(m_box, m_ground, t)));
   }
 
+#ifndef NO_GRAVITY
   // complementarity
   for (int t = 0; t < prob->m_timesteps; ++t) {
  //   prob->addConstr(ConstraintPtr(new BoxGroundContactComplCntND(this, t, "box_ground_compl")));
     prob->addCost(CostPtr(new BoxGroundComplementarityCost(this, t)));
   }
+#endif
 
   model->update();
 }
 
 AffExpr BoxGroundContact::getForceExpr(DynamicsObject *o, int t, int i) {
   assert(o == m_box);
+#ifdef NO_GRAVITY
+  return AffExpr();
+#else
   return AffExpr(m_trajvars.f(t,i));
+#endif
 }
 
 vector<DynamicsObject*> BoxGroundContact::getAffectedObjects() {
@@ -270,6 +279,12 @@ vector<DynamicsObject*> BoxGroundContact::getAffectedObjects() {
 
 Collision flipCollision(const Collision &c) {
   return Collision(c.linkB, c.linkA, c.ptB, c.ptA, -c.normalB2A, c.distance, c.weight, c.time);
+}
+
+Collision orientCollisionNormal(const Collision &c, const OR::Vector &pos_a, const OR::Vector &pos_b) {
+  // ensure that normalB2A indeed points from A to B (can't use ptA and ptB for direction testing since they might be the same point in world coords)
+  bool neg = c.normalB2A.dot((pos_a - pos_b).normalize()) < 0;
+  return Collision(c.linkA, c.linkB, c.ptA, c.ptB, neg ? -c.normalB2A : c.normalB2A, c.distance, c.weight, c.time);
 }
 
 static const double CONTACT_DIST = 10.;
@@ -287,10 +302,10 @@ static Collision checkBoxGroundCollision(OR::KinBodyPtr box, OR::KinBodyPtr grou
     cout << "collision?: " << c.linkA->GetParent()->GetName() << ' ' << c.linkB->GetParent()->GetName() << ' ' << c.distance << endl;
     if (c.linkB == ground_link) {
       cout << "NO FLIP" << endl;
-      return c;
+      return orientCollisionNormal(c, c.linkA->GetTransform().trans, c.linkB->GetTransform().trans);
     } else if (c.linkA == ground_link) {
       cout << "FLIP" << endl;
-      return flipCollision(c);
+      return flipCollision(orientCollisionNormal(c, c.linkA->GetTransform().trans, c.linkB->GetTransform().trans));
     }
   }
   return Collision(NULL, NULL, OR::Vector(), OR::Vector(), OR::Vector(), 0.);
@@ -459,18 +474,21 @@ static Collision checkBoxBoxCollision(OR::KinBodyPtr box1, OR::KinBodyPtr box2, 
   for (Collision &c : collisions) {
     cout << "collision?: " << c.linkA->GetParent()->GetName() << ' ' << c.linkB->GetParent()->GetName() << ' ' << c.distance << endl;
     if (c.linkB == box2_link) {
-      return c;
+      return orientCollisionNormal(c, c.linkA->GetTransform().trans, c.linkB->GetTransform().trans);
     } else if (c.linkA == box2_link) {
-      return flipCollision(c);
+      return flipCollision(orientCollisionNormal(c, c.linkA->GetTransform().trans, c.linkB->GetTransform().trans));
     }
   }
   return Collision(NULL, NULL, OR::Vector(), OR::Vector(), OR::Vector(), 0.);
 }
 
-class BoxBoxPenetrationConstraint : public IneqConstraint {
+class BoxBoxPenetrationConstraint : public Constraint {
 public:
   Box *m_box1, *m_box2; int m_t; DynamicsProblem *m_prob;
-  BoxBoxPenetrationConstraint(Box *box1, Box *box2, int t) : m_box1(box1), m_box2(box2), m_t(t), m_prob(box1->m_prob) { }
+  BoxBoxPenetrationConstraint(Box *box1, Box *box2, int t, const string &name_prefix)
+    : m_box1(box1), m_box2(box2), m_t(t), m_prob(box1->m_prob), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
+
+  ConstraintType type() { return INEQ; }
 
   virtual vector<double> value(const vector<double>& x) {
     VarVector box1_x_vars = m_box1->m_trajvars.x.row(m_t);
@@ -509,7 +527,7 @@ public:
       exprInc(sd, varDot(-dist_grad, box2_x_vars));
       exprInc(sd, dist_grad.dot(box2_x));
 
-      cout << "signed dist expr: " << sd << endl;
+      cout << "box-box signed dist expr: " << sd << endl;
       out->addIneqCnt(-sd);
     }
     return out;
@@ -521,12 +539,12 @@ class BoxBoxComplementarityCost : public Cost { // hinge cost on complementarity
 public:
   BoxBoxContact *m_contact;
   int m_t;
-  BoxBoxComplementarityCost(BoxBoxContact *contact, int t) : m_contact(contact), m_t(t) { }
+  BoxBoxComplementarityCost(BoxBoxContact *contact, int t, const string &name_prefix) : m_contact(contact), m_t(t), Cost((boost::format("%s_%d") % name_prefix % t).str()) { }
 
   virtual double value(const vector<double>& x) {
     double dist;
     Vector3d normal;
-    getContactDistAndNormal(x, dist, normal);
+    m_contact->calcContactDistAndNormal(x, m_t, dist, normal);
     Vector3d cont_f_val(getVec(x, m_contact->m_trajvars.f.row(m_t)));
     return positivePart(dist * normal.dot(cont_f_val));
   }
@@ -541,7 +559,7 @@ public:
 
     double dist;
     Vector3d normal;
-    getContactDistAndNormal(x, dist, normal);
+    m_contact->calcContactDistAndNormal(x, m_t, dist, normal);
     double fnormal = normal.dot(cont_f_val);
 
     AffExpr dDistOfA = makeDerivExpr(normal, box1_x_vars, box1_x_val);
@@ -583,29 +601,105 @@ public:
 
     //GRBLinExpr compExpr = contact->m_distExpr * contact->m_fn_val + contact->m_dist * (contact->m_fn - contact->m_fn_val);
     //addHingeCost(out, m_coeff, compExpr, model, "compl");
-
-  }
-
-protected:
-  void getContactDistAndNormal(const vector<double> &x, double &out_dist, Vector3d &out_normal) {
-    m_contact->m_box1->setRaveState(x, m_t);
-    m_contact->m_box2->setRaveState(x, m_t);
-    m_contact->m_prob->m_cc->SetContactDistance(CONTACT_DIST);
-    Collision col(checkBoxBoxCollision(m_contact->m_box1->m_kinbody, m_contact->m_box2->m_kinbody, m_contact->m_prob->m_cc));
-    out_dist = col.linkA != NULL ? col.distance : CONTACT_DIST;
-
-    Vector3d cont_f_val(getVec(x, m_contact->m_trajvars.f.row(m_t)));
-    if (col.linkA != NULL) {
-      out_normal = toVector3d(col.normalB2A).normalized();
-    } else {
-      Vector3d x1(getVec(x, m_contact->m_box1->m_trajvars.x.row(m_t)));
-      Vector3d x2(getVec(x, m_contact->m_box2->m_trajvars.x.row(m_t)));
-      out_normal = (x1 - x2).normalized();
-    }
   }
 };
 
+AffExpr linearizeCnt1(const vector<double> &xin, const VarVector &vars, Constraint *cnt, double eps=1e-4) {
+  vector<double> xtmp = xin;
+  AffExpr out(cnt->value(xin)[0]);
+  for (const Var &var : vars) {
+    int idx = var.var_rep->index;
+    xtmp[idx] = xin[idx] + eps;
+    double y2 = cnt->value(xtmp)[0];
+    xtmp[idx] = xin[idx] - eps;
+    double y1 = cnt->value(xtmp)[0];
+    xtmp[idx] = xin[idx];
+    double dy = (y2 - y1) / (2.*eps);
+    cout << "ND: " << y2 << ' ' << y1 << ' ' << dy << ' ' << var.var_rep->name << endl;
+    if (abs(dy) < 1e-7) continue;
+    exprInc(out, dy*(var - xin[idx]));
+  }
+  return out;
+}
+
+class BoxBoxContactForceDirConstraint : public Constraint {
+public:
+  BoxBoxContact *m_contact; int m_t; DynamicsProblem *m_prob;
+  BoxBoxContactForceDirConstraint(BoxBoxContact *contact, int t, const string &name_prefix)
+    : m_contact(contact), m_t(t), m_prob(contact->m_prob), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
+
+  ConstraintType type() { return INEQ; }
+
+  virtual vector<double> value(const vector<double>& x) {
+    double dist; Vector3d normal;
+    m_contact->calcContactDistAndNormal(x, m_t, dist, normal);
+    Vector3d cont_f_val(getVec(x, m_contact->m_trajvars.f.row(m_t)));
+    double fnormal = cont_f_val.dot(normal);
+    cout << "BLAH: " << normal.transpose() << " | " << cont_f_val.transpose() << " | " << fnormal << endl;
+    return vector<double>(1, -fnormal);
+  }
+
+  virtual ConvexConstraintsPtr convex(const vector<double>& x, Model* model) {
+    ConvexConstraintsPtr out(new ConvexConstraints(model));
+
+//    VarVector nd_vars = concat(m_contact->m_trajvars.f.row(m_t), concat(m_contact->m_box1->m_trajvars.x.row(m_t), m_contact->m_box2->m_trajvars.x.row(m_t))); // todo: rotation
+//    //cout << Str(nd_vars) << endl;
+//    out->addIneqCnt(linearizeCnt1(x, nd_vars, this)); // todo: only add when boxes are near contact
+//    cout << "linearized (numerically) box-box force dir cnt: " << out->ineqs_.back() << endl;
+
+    VarVector box1_x_vars = m_contact->m_box1->m_trajvars.x.row(m_t);
+    VarVector box2_x_vars = m_contact->m_box2->m_trajvars.x.row(m_t);
+    VarVector cont_f_vars = m_contact->m_trajvars.f.row(m_t);
+    Vector3d box1_x_val(getVec(x, box1_x_vars));
+    Vector3d box2_x_val(getVec(x, box2_x_vars));
+    Vector3d cont_f_val(getVec(x, cont_f_vars));
+
+    double dist;
+    Vector3d normal;
+    m_contact->calcContactDistAndNormal(x, m_t, dist, normal);
+    double fnormal = normal.dot(cont_f_val);
+
+    AffExpr e(fnormal);
+    cout << "WUT " << normal.transpose() << endl;
+    exprInc(e, varDot(normal, cont_f_vars) - normal.dot(cont_f_val));
+    // TODO: f*n' term?
+    out->addIneqCnt(-e);
+//
+//    AffExpr dDistOfA = makeDerivExpr(normal, box1_x_vars, box1_x_val);
+//                     //    + exprDot(m_normalB2A, exprCross(m_bodyA->m_r1_var, m_worldA - m_bodyA->m_x1_val));
+//    AffExpr dDistOfB = makeDerivExpr(-normal, box2_x_vars, box2_x_val);
+//                      //   + exprDot(-m_normalB2A, exprCross(m_bodyB->m_r1_var, m_worldB - m_bodyB->m_x1_val));
+//    AffExpr dist_expr = (dDistOfA + dDistOfB + dist);
+//
+//    AffExpr fnormal_var_expr = varDot(normal, cont_f_vars); // FIXME: is this even right???????
+//    AffExpr final_expr = dist_expr*fnormal + dist*(fnormal_var_expr - fnormal);
+    cout << "linearized box-box force dir cnt: " << e << endl;
+//    out->addIneqCnt(-final_expr);
+//
+
+    return out;
+  }
+};
+
+void BoxBoxContact::calcContactDistAndNormal(const vector<double> &x, int t, double &out_dist, Vector3d &out_normal) {
+  m_box1->setRaveState(x, t);
+  m_box2->setRaveState(x, t);
+  m_prob->m_cc->SetContactDistance(CONTACT_DIST);
+  Collision col(checkBoxBoxCollision(m_box1->m_kinbody, m_box2->m_kinbody, m_prob->m_cc));
+  cout << col << endl;
+  out_dist = col.linkA != NULL ? col.distance : CONTACT_DIST;
+
+  if (col.linkA != NULL) {
+    out_normal = toVector3d(col.normalB2A).normalized();
+  } else {
+    Vector3d x1(getVec(x, m_box1->m_trajvars.x.row(t)));
+    Vector3d x2(getVec(x, m_box2->m_trajvars.x.row(t)));
+    out_normal = (x1 - x2).normalized();
+  }
+}
+
 void BoxBoxContact::addConstraintsToModel() {
+  string name_prefix = (boost::format("contact_%s-%s") % m_box1->getName() % m_box2->getName()).str();
   ModelPtr model = m_prob->getModel();
 
   // contact origin points must stay inside respective boxes (in local coords)
@@ -621,7 +715,7 @@ void BoxBoxContact::addConstraintsToModel() {
 
   // contact force must be repulsive
   for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    // TODO
+    m_prob->addConstr(ConstraintPtr(new BoxBoxContactForceDirConstraint(this, t, name_prefix + "_fdir")));
   }
 
   // friction cone
@@ -631,12 +725,12 @@ void BoxBoxContact::addConstraintsToModel() {
 
   // boxes cannot penetrate
   for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addConstr(ConstraintPtr(new BoxBoxPenetrationConstraint(m_box1, m_box2, t)));
+    m_prob->addConstr(ConstraintPtr(new BoxBoxPenetrationConstraint(m_box1, m_box2, t, name_prefix + "_pen")));
   }
 
   // complementarity
   for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addCost(CostPtr(new BoxBoxComplementarityCost(this, t)));
+    m_prob->addCost(CostPtr(new BoxBoxComplementarityCost(this, t, name_prefix + "_compl")));
   }
 
   model->update();

@@ -33,6 +33,7 @@ enable_testing()
 option(BUILD_CLOUDPROC "build point cloud processing stuff" OFF)
 option(BUILD_SANDBOX "build sandbox programs" OFF)
 option(BUILD_HUMANOIDS "build humanoids stuff" OFF)
+option(BUILD_DYNAMICS "build dynamics stuff" OFF)
 
 add_subdirectory(ext)
 add_subdirectory(src)

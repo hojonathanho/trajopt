@@ -1,7 +1,7 @@
 #include "box.hpp"
 
 #include "trajopt/utils.hpp"
-#include "ipi/sco/expr_vec_ops.hpp"
+#include "sco/expr_vec_ops.hpp"
 
 namespace trajopt {
 namespace dynamics {

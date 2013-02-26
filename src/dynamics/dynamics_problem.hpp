@@ -7,8 +7,8 @@
 #include "trajopt/typedefs.hpp"
 #include "trajopt/rave_utils.hpp"
 #include "trajopt/collision_checker.hpp"
-#include "ipi/sco/expr_op_overloads.hpp"
-#include "ipi/sco/optimizers.hpp"
+#include "sco/optimizers.hpp"
+#include "sco/expr_op_overloads.hpp"
 #include "util.h"
 
 namespace trajopt {

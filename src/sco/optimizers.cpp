@@ -88,27 +88,34 @@ static vector<string> getCntNames(const vector<ConstraintPtr>& cnts) {
   return out;
 }
 
-void printCostInfo(const vector<double>& old_cost_vals, const vector<double>& model_cost_vals, const vector<double>& new_cost_vals,
-                  const vector<double>& old_cnt_vals, const vector<double>& model_cnt_vals, const vector<double>& new_cnt_vals,
+void printCostInfo(
+    const vector<double>& old_cost_vals, const vector<double>& model_cost_vals, const vector<double>& new_cost_vals,
+    const vector<double>& old_cnt_vals, const vector<double>& model_cnt_vals, const vector<double>& new_cnt_vals,
     const vector<string>& cost_names, const vector<string>& cnt_names, double merit_coeff) {
-    printf("%15s | %10s | %10s | %10s | %10s\n", "", "oldexact", "dapprox", "dexact", "ratio");
-    printf("%15s | %10s---%10s---%10s---%10s\n", "COSTS", "----------", "----------", "----------", "----------");
-    for (size_t i=0; i < old_cost_vals.size(); ++i) {
-      double approx_improve = old_cost_vals[i] - model_cost_vals[i];
-      double exact_improve = old_cost_vals[i] - new_cost_vals[i];
-      string fmtstr = fabs(approx_improve) < 1e-8 ? "%15s | %10.3e | %10.3e | %10.3e | (%8.3e)\n" : "%15s | %10.3e | %10.3e | %10.3e | %10.3e\n";
-      printf(fmtstr.c_str(), cost_names[i].c_str(),
-                   old_cost_vals[i], approx_improve, exact_improve, exact_improve/approx_improve);
-    }
-    if (cnt_names.size() == 0) return;
-    printf("%15s | %10s---%10s---%10s---%10s\n", "CONSTRAINTS", "----------", "----------", "----------", "----------");
-    for (size_t i=0; i < old_cnt_vals.size(); ++i) {
-      double approx_improve = old_cnt_vals[i] - model_cnt_vals[i];
-      double exact_improve = old_cnt_vals[i] - new_cnt_vals[i];
-      string fmtstr = fabs(approx_improve) < 1e-8 ? "%15s | %10.3e | %10.3e | %10.3e | (%8.3e)\n" : "%15s | %10.3e | %10.3e | %10.3e | %10.3e\n";
-      printf(fmtstr.c_str(), cnt_names[i].c_str(),
-                   merit_coeff*old_cnt_vals[i], merit_coeff*approx_improve, merit_coeff*exact_improve, exact_improve/approx_improve);
-    }
+
+  size_t max_name_len = 0;
+  for (size_t i=0; i < cost_names.size(); ++i) { max_name_len = max(max_name_len, cost_names[i].size()); }
+  for (size_t i=0; i < cnt_names.size(); ++i) { max_name_len = max(max_name_len, cnt_names[i].size()); }
+  string name_fmt = (boost::format("%%%ds") % max_name_len).str();
+
+  printf((name_fmt + " | %10s | %10s | %10s | %10s\n").c_str(), "", "oldexact", "dapprox", "dexact", "ratio");
+  printf((name_fmt + " | %10s---%10s---%10s---%10s\n").c_str(), "COSTS", "----------", "----------", "----------", "----------");
+  for (size_t i=0; i < old_cost_vals.size(); ++i) {
+    double approx_improve = old_cost_vals[i] - model_cost_vals[i];
+    double exact_improve = old_cost_vals[i] - new_cost_vals[i];
+    string fmtstr = fabs(approx_improve) < 1e-8 ? name_fmt + " | %10.3e | %10.3e | %10.3e | (%8.3e)\n" : name_fmt + " | %10.3e | %10.3e | %10.3e | %10.3e\n";
+    printf(fmtstr.c_str(), cost_names[i].c_str(),
+                 old_cost_vals[i], approx_improve, exact_improve, exact_improve/approx_improve);
+  }
+  if (cnt_names.size() == 0) return;
+  printf((name_fmt + " | %10s---%10s---%10s---%10s\n").c_str(), "CONSTRAINTS", "----------", "----------", "----------", "----------");
+  for (size_t i=0; i < old_cnt_vals.size(); ++i) {
+    double approx_improve = old_cnt_vals[i] - model_cnt_vals[i];
+    double exact_improve = old_cnt_vals[i] - new_cnt_vals[i];
+    string fmtstr = fabs(approx_improve) < 1e-8 ? name_fmt + " | %10.3e | %10.3e | %10.3e | (%8.3e)\n" : name_fmt + " | %10.3e | %10.3e | %10.3e | %10.3e\n";
+    printf(fmtstr.c_str(), cnt_names[i].c_str(),
+                 merit_coeff*old_cnt_vals[i], merit_coeff*approx_improve, merit_coeff*exact_improve, exact_improve/approx_improve);
+  }
 
 }
 
