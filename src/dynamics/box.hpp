@@ -18,28 +18,28 @@ struct BoxState {
   BoxState() : x(Vector3d::Zero()), v(Vector3d::Zero()), force(Vector3d::Zero()), q(Quaterniond::Identity()), w(Vector3d::Zero()), torque(Vector3d::Zero()) { }
 
   static inline int Dim() { return 19; }
+};
 
-  VectorXd toVec() const {
-    Eigen::Matrix<double, 19, 1> vec;
-    vec.block<3, 1>(0, 0) = x;
-    vec.block<3, 1>(3, 0) = v;
-    vec.block<3, 1>(6, 0) = force;
-    vec.block<4, 1>(9, 0) = q.coeffs();
-    vec.block<3, 1>(13, 0) = w;
-    vec.block<3, 1>(16, 0) = torque;
-    return vec;
+struct BoxStateTraj {
+  MatrixX3d x, v, force;
+  MatrixX4d q;
+  MatrixX3d w, torque;
+
+  BoxStateTraj(int timesteps) : x(MatrixX3d::Zero(timesteps, 3)), v(MatrixX3d::Zero(timesteps, 3)), force(MatrixX3d::Zero(timesteps, 3)), q(MatrixX4d::Zero(timesteps, 4)), w(MatrixX3d::Zero(timesteps, 3)), torque(MatrixX3d::Zero(timesteps, 3)) {
+    q.col(3) = VectorXd::Ones(timesteps);
   }
 
-  static BoxState FromVec(const VectorXd &vec) {
-    assert(vec.size() == Dim());
-    BoxState bs;
-    bs.x = vec.block<3, 1>(0, 0);
-    bs.v = vec.block<3, 1>(3, 0);
-    bs.force = vec.block<3, 1>(6, 0);
-    bs.q = Quaterniond(vec.block<4, 1>(9, 0));
-    bs.w = vec.block<3, 1>(13, 0);
-    bs.torque = vec.block<3, 1>(16, 0);
-    return bs;
+  static BoxStateTraj FromConstant(int timesteps, const BoxState &s) {
+    BoxStateTraj traj(timesteps);
+    for (int t = 0; t < timesteps; ++t) {
+      traj.x.row(t) = s.x;
+      traj.v.row(t) = s.v;
+      traj.force.row(t) = s.force;
+      traj.q.row(t) = s.q.coeffs();
+      traj.w.row(t) = s.w;
+      traj.torque.row(t) = s.torque;
+    }
+    return traj;
   }
 };
 
@@ -65,21 +65,32 @@ struct BoxProperties {
   Matrix3d I_body_inv;
 };
 
+class Box;
+typedef boost::shared_ptr<Box> BoxPtr;
+
+struct BoxSpec : public Spec {
+  string name;
+  BoxProperties props;
+  BoxState state_0;
+  BoxStateTraj traj_init;
+  bool is_kinematic;
+
+  BoxSpec(const ProblemSpec &prob_spec) : traj_init(prob_spec.timesteps) { }
+  OptimizationBasePtr realize(DynamicsProblem *prob);
+};
+typedef boost::shared_ptr<BoxSpec> BoxSpecPtr;
 
 class Box : public DynamicsObject {
 public:
   // constants
-  BoxProperties m_props;
-
-  DynamicsProblem *m_prob;
+  BoxSpec m_spec;
 
   // traj variables for optimization
   BoxStateTrajVars m_trajvars;
-  BoxState m_init_state;
 
   OR::KinBodyPtr m_kinbody;
 
-  Box(const string &name, DynamicsProblem *prob, const BoxProperties &props, const BoxState &init_state);
+  Box(const BoxSpec &spec, DynamicsProblem *prob);
   virtual ~Box() { }
 
   vector<Contact*> m_contacts;
@@ -95,15 +106,21 @@ public:
 
 private:
 };
-typedef boost::shared_ptr<Box> BoxPtr;
+
+struct GroundSpec : public Spec {
+  string name;
+  double z;
+
+  OptimizationBasePtr realize(DynamicsProblem *prob);
+};
+typedef boost::shared_ptr<GroundSpec> GroundSpecPtr;
 
 class Ground : public DynamicsObject {
 public:
-  double m_z;
-  DynamicsProblem *m_prob;
+  GroundSpec m_spec;
   OR::KinBodyPtr m_kinbody;
 
-  Ground(const string &name, DynamicsProblem *prob, double z) : m_prob(prob), m_z(z), DynamicsObject(name) { }
+  Ground(const GroundSpec &spec, DynamicsProblem *prob) : m_spec(spec), DynamicsObject(spec.name, prob) { }
   virtual ~Ground() { }
 
   void fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) { }

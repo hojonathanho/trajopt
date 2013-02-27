@@ -2,9 +2,30 @@
 
 #include "osgviewer/osgviewer.hpp"
 #include "utils/stl_to_string.hpp"
+#include "utils/logging1.hpp"
 
 namespace trajopt {
 namespace dynamics {
+
+DynamicsObjectPtr DynamicsProblem::findObject(const string &name) {
+  for (DynamicsObjectPtr &o : m_objects) {
+    if (o->getName() == name) {
+      return o;
+    }
+  }
+  LOG_ERROR("object %s not found!", name.c_str());
+  return DynamicsObjectPtr();
+}
+
+ContactPtr DynamicsProblem::findContact(const string &name) {
+  for (ContactPtr &c : m_contacts) {
+    if (c->getName() == name) {
+      return c;
+    }
+  }
+  LOG_ERROR("contact %s not found!", name.c_str());
+  return ContactPtr();
+}
 
 void DynamicsProblem::setUpProblem() {
   for (ContactPtr &c : m_contacts) {
@@ -59,6 +80,32 @@ vector<double> DynamicsProblem::makeInitialSolution() {
   return v;
 }
 
+
+DynamicsProblemPtr CreateDynamicsProblem(OR::EnvironmentBasePtr env, ProblemSpec &spec) {
+  DynamicsProblemPtr prob(new DynamicsProblem(env, spec));
+  for (SpecPtr &obj_spec : spec.objects) {
+    DynamicsObjectPtr o = boost::dynamic_pointer_cast<DynamicsObject>(obj_spec->realize(prob.get()));
+    prob->addObject(o);
+    LOG_INFO("Created object %s", o->getName().c_str());
+  }
+  for (SpecPtr &contact_spec : spec.contacts) {
+    prob->addContact(boost::dynamic_pointer_cast<Contact>(contact_spec->realize(prob.get())));
+  }
+//  switch (o->getType()) {
+//    case OptimizationBase::TYPE_OBJECT:
+//      prob->addObject(boost::dynamic_pointer_cast<DynamicsObject>(o));
+//      break;
+//    case OptimizationBase::TYPE_CONTACT:
+//      prob->addContact(boost::dynamic_pointer_cast<Contact>(o));
+//      break;
+//    default:
+//      assert(false);
+//      break;
+//    }
+//  }
+  return prob;
+}
+
 DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plotting) {
   if (prob->getNumCosts() == 0) {
     prob->addCost(CostPtr(new ZeroCost())); // shut up
@@ -86,6 +133,54 @@ DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plott
   result->status = status;
   return result;
 }
+
+//DynamicsOptResultPtr OptimizeStepLoop(DynamicsProblemPtr prob, bool plotting) {
+//  if (prob->getNumCosts() == 0) {
+//    prob->addCost(CostPtr(new ZeroCost())); // shut up
+//  }
+//  const int total_timesteps = prob->m_timesteps;
+//
+//  DynamicsProblemPtr tmp_prob;
+//
+//  for (int t = 1; t < total_timesteps; ++t) {
+//    tmp_prob.reset(new DynamicsProblem(*prob));
+//    tmp_prob->m_timesteps = 2;
+//    tmp_prob->setUpProblem();
+//  }
+//
+//  OSGViewerPtr viewer;
+//  if (plotting) {
+//    viewer.reset(new OSGViewer(prob->m_env));
+//    viewer->Idle();
+//  }
+//
+//  vector<double> curr_x = prob->makeInitialSolution();
+//
+//  for (int t = 1; t < total_timesteps; ++t) {
+//    BasicTrustRegionSQPPtr optimizer(new BasicTrustRegionSQP(prob));
+//    optimizer->min_trust_box_size_ = 1e-7;
+//    optimizer->min_approx_improve_= 1e-7;
+//    optimizer->cnt_tolerance_ = 1e-7;
+//    optimizer->trust_box_size_ = 1;
+//    optimizer->max_iter_ = 1000;
+//
+//    optimizer->initialize(curr_x);
+//    OptStatus status = optimizer->optimize();
+//
+//    curr_x = optimizer->x();
+//    for (DynamicsObjectPtr &o : prob->m_objects) {
+//      o->setRaveState(curr_x, 1);
+//    }
+//    prob->m_env->UpdatePublishedBodies();
+//    if (viewer) {
+//      viewer->Idle();
+//    }
+//  }
+//
+//  //optimizer->max_merit_coeff_increases_= 10;
+//
+//
+//}
 
 } // namespace dynamics
 } // namespace trajopt

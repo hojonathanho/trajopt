@@ -8,13 +8,16 @@ namespace dynamics {
 
 #define NO_GRAVITY
 
-BoxGroundContact::BoxGroundContact(const string &name, Box *box, Ground *ground) :
-    m_box(box), m_ground(ground), m_trajvars(box->m_prob->m_timesteps), Contact(name) {
-  assert(m_box->m_prob == m_ground->m_prob);
+BoxGroundContact::BoxGroundContact(const BoxGroundContactSpec &spec, DynamicsProblem *prob)
+  : m_trajvars(prob->m_spec.timesteps), Contact(spec.name, prob)
+{
+  m_box = boost::dynamic_pointer_cast<Box>(getProb()->findObject(spec.box_name)).get();
+  m_ground = boost::dynamic_pointer_cast<Ground>(getProb()->findObject(spec.ground_name)).get();
+  assert(m_box->getProb() == m_ground->getProb());
 }
 
 void BoxGroundContact::fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) {
-  for (int t = 0; t < m_box->m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       out_names.push_back((boost::format("%s_p_%i_%i") % name_prefix % t % i).str());
       out_vlower.push_back(-INFINITY);
@@ -29,7 +32,7 @@ void BoxGroundContact::fillVarNamesAndBounds(vector<string> &out_names, vector<d
 }
 
 void BoxGroundContact::fillInitialSolution(vector<double> &out) {
-  for (int t = 0; t < m_box->m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       out.push_back(0);
     }
@@ -41,7 +44,7 @@ void BoxGroundContact::fillInitialSolution(vector<double> &out) {
 
 int BoxGroundContact::setVariables(const vector<Var> &vars, int start_pos) {
   int k = start_pos;
-  for (int t = 0; t < m_box->m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       m_trajvars.p(t,i) = vars[k++];
     }
@@ -49,7 +52,7 @@ int BoxGroundContact::setVariables(const vector<Var> &vars, int start_pos) {
       m_trajvars.f(t,i) = vars[k++];
     }
   }
-  assert(k - start_pos == m_box->m_prob->m_timesteps*ContactState::Dim());
+  assert(k - start_pos == getProb()->m_spec.timesteps*ContactState::Dim());
   return k;
 }
 
@@ -68,7 +71,7 @@ struct BoxGroundComplementarityCost : public Cost { // hinge cost on complementa
   virtual double value(const vector<double>& x) {
     Vector3d box_x_val(getVec(x, m_contact->m_box->m_trajvars.x.row(m_t)));
     Vector3d cont_f_val(getVec(x, m_contact->m_trajvars.f.row(m_t)));
-    double zdiff = (box_x_val(2) - m_contact->m_box->m_props.half_extents(2)) - m_contact->m_ground->m_z;
+    double zdiff = (box_x_val(2) - m_contact->m_box->m_spec.props.half_extents(2)) - m_contact->m_ground->m_spec.z;
     return positivePart(zdiff * cont_f_val(2));
   }
   virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model) {
@@ -76,7 +79,7 @@ struct BoxGroundComplementarityCost : public Cost { // hinge cost on complementa
     VarVector cont_f_vars = m_contact->m_trajvars.f.row(m_t);
     Vector3d box_x_val(getVec(x, box_x_vars));
     Vector3d cont_f_val(getVec(x, cont_f_vars));
-    double zdiff = (box_x_val(2) - m_contact->m_box->m_props.half_extents(2)) - m_contact->m_ground->m_z;
+    double zdiff = (box_x_val(2) - m_contact->m_box->m_spec.props.half_extents(2)) - m_contact->m_ground->m_spec.z;
 
     Vector3d normalB2A(0, 0, 1);
     AffExpr dDistOfA = makeDerivExpr(normalB2A, box_x_vars, box_x_val);
@@ -129,7 +132,7 @@ struct BoxGroundContactComplCntND : public ConstraintFromNumDiff {
       assert(vals.size() == 6);
       Vector3d box_x_val(vals.segment<3>(0));
       Vector3d cont_f_val(vals.segment<3>(3));
-      double zdiff = (box_x_val(2) - m_cnt->m_contact->m_box->m_props.half_extents(2)) - m_cnt->m_contact->m_ground->m_z;
+      double zdiff = (box_x_val(2) - m_cnt->m_contact->m_box->m_spec.props.half_extents(2)) - m_cnt->m_contact->m_ground->m_spec.z;
       double fnormal = cont_f_val(2);
       double viol = zdiff * fnormal;
       return makeVector1d(viol);
@@ -202,13 +205,13 @@ class BoxGroundConstraintSimple : public Constraint { // no rotation -- just con
 public:
   virtual ConstraintType type() { return INEQ; }
   virtual vector<double> value(const vector<double>& x) {
-    double val = -m_box->m_trajvars.x(m_t,2).value(x) + m_ground->m_z + m_box->m_props.half_extents(2);
+    double val = -m_box->m_trajvars.x(m_t,2).value(x) + m_ground->m_spec.z + m_box->m_spec.props.half_extents(2);
     return vector<double>{val};
   }
   virtual ConvexConstraintsPtr convex(const vector<double>& x, Model* model) {
     ConvexConstraintsPtr out(new ConvexConstraints(model));
     AffExpr exp(-m_box->m_trajvars.x(m_t,2));
-    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
+    exp.constant = m_ground->m_spec.z + m_box->m_spec.props.half_extents(2);
     out->addIneqCnt(exp);
     return out;
   }
@@ -218,8 +221,7 @@ public:
 };
 
 void BoxGroundContact::addConstraintsToModel() {
-  DynamicsProblem *prob = m_box->m_prob;
-  ModelPtr model = prob->getModel();
+  ModelPtr model = getProb()->getModel();
 
 #ifndef NO_GRAVITY
   // contact origin point must stay inside box (in local coords)
@@ -243,13 +245,13 @@ void BoxGroundContact::addConstraintsToModel() {
 #endif
 
   // box cannot penetrate ground
-  for (int t = 0; t < prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     //prob->addConstr(ConstraintPtr(new BoxGroundConstraintND(prob, m_box, m_ground, t)));
    // prob->addConstr(ConstraintPtr(new BoxGroundConstraint(prob, m_box, m_ground, t)));
 //    AffExpr exp(-m_box->m_trajvars.x(t,2));
 //    exp.constant = m_ground->m_z + m_box->m_props.half_extents(2);
 //    model->addIneqCnt(exp, "");
-    prob->addConstr(ConstraintPtr(new BoxGroundConstraintSimple(m_box, m_ground, t)));
+    getProb()->addConstr(ConstraintPtr(new BoxGroundConstraintSimple(m_box, m_ground, t)));
   }
 
 #ifndef NO_GRAVITY
@@ -315,6 +317,26 @@ static Collision checkBoxGroundCollision(const OR::Transform &trans, OR::KinBody
   return checkBoxGroundCollision(box, ground, cc);
 }
 
+// nonpenetration constraint for a single timestep--lowest point on box must have z-value >= ground z-value
+class BoxGroundConstraintND;
+struct BoxGroundConstraintNDErrCalc : public VectorOfVector {
+  BoxGroundConstraintND *m_cnt;
+  BoxGroundConstraintNDErrCalc(BoxGroundConstraintND *cnt) : m_cnt(cnt) { }
+  VectorXd operator()(const VectorXd &vals) const;
+  static VarVector buildVarVector(Box *box, int t);
+};
+class BoxGroundConstraintND : public ConstraintFromNumDiff {
+public:
+  DynamicsProblem *m_prob;
+  Box *m_box;
+  Ground *m_ground;
+  int m_t;
+
+  BoxGroundConstraintND(Box *box, Ground *ground, int t, const string &name_prefix="box_ground");
+};
+typedef boost::shared_ptr<BoxGroundConstraintND> BoxGroundConstraintNDPtr;
+
+
 VectorXd BoxGroundConstraintNDErrCalc::operator()(const VectorXd &vals) const {
   assert(vals.size() == 7);
   Vector3d box_x = vals.block<3,1>(0,0);
@@ -340,20 +362,39 @@ VarVector BoxGroundConstraintNDErrCalc::buildVarVector(Box *box, int t) {
   return v;
 }
 
-void Ground::addToRave() {
-  m_kinbody = OR::RaveCreateKinBody(m_prob->m_env, "");
-  m_kinbody->SetName(getName());
-  vector<OR::AABB> aabb;
-  aabb.push_back(OR::AABB(OR::Vector(0, 0, m_z - 1), OR::Vector(100, 100, 1)));
-  m_kinbody->InitFromBoxes(aabb, true);
-  m_prob->m_env->Add(m_kinbody);
+BoxGroundConstraintND::BoxGroundConstraintND(Box *box, Ground *ground, int t, const string &name_prefix)
+  : m_box(box), m_ground(ground), m_t(t), m_prob(box->getProb()),
+    ConstraintFromNumDiff(
+      VectorOfVectorPtr(new BoxGroundConstraintNDErrCalc(this)),
+      BoxGroundConstraintNDErrCalc::buildVarVector(box, t),
+      INEQ,
+      (boost::format("%s_%d") % name_prefix % t).str())
+{
+  assert(m_box->getProb() == m_ground->getProb());
 }
 
+class BoxGroundConstraint : public Constraint {
+public:
+  DynamicsProblem *m_prob;
+  Box *m_box;
+  Ground *m_ground;
+  int m_t;
 
-BoxGroundConstraint::BoxGroundConstraint(DynamicsProblem *prob, Box *box, Ground *ground, int t, const string &name_prefix)
-  : m_prob(prob), m_box(box), m_ground(ground), m_t(t),
+  BoxGroundConstraint(Box *box, Ground *ground, int t, const string &name_prefix="box_ground");
+  virtual ~BoxGroundConstraint() {}
+
+  ConstraintType type() {return INEQ;}
+  virtual vector<double> value(const vector<double>& x);
+  virtual ConvexConstraintsPtr convex(const vector<double>& x, Model* model);
+
+};
+
+BoxGroundConstraint::BoxGroundConstraint(Box *box, Ground *ground, int t, const string &name_prefix)
+  : m_prob(box->getProb()), m_box(box), m_ground(ground), m_t(t),
     Constraint((boost::format("%s_%d") % name_prefix % t).str())
-{ }
+{
+  assert(m_box->getProb() == m_ground->getProb());
+}
 
 vector<double> BoxGroundConstraint::value(const vector<double>& x) {
 //  Vector3d box_x = getVec(x, m_box->m_trajvars.x.row(m_t));
@@ -391,13 +432,16 @@ ConvexConstraintsPtr BoxGroundConstraint::convex(const vector<double>& x, Model*
   return out;
 }
 
-BoxBoxContact::BoxBoxContact(const string &name, Box *box1, Box *box2)
-    : m_box1(box1), m_box2(box2), m_trajvars(box1->m_prob->m_timesteps), m_prob(box1->m_prob), Contact(name) {
-  assert(m_box1->m_prob == m_box2->m_prob);
+BoxBoxContact::BoxBoxContact(const BoxBoxContactSpec &spec, DynamicsProblem *prob)
+    : m_trajvars(prob->m_spec.timesteps), Contact(spec.name, prob)
+{
+  m_box1 = boost::dynamic_pointer_cast<Box>(getProb()->findObject(spec.box1_name)).get();
+  m_box2 = boost::dynamic_pointer_cast<Box>(getProb()->findObject(spec.box2_name)).get();
+  assert(m_box1->getProb() == m_box2->getProb());
 }
 
 void BoxBoxContact::fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_vlower, vector<double> &out_vupper, const string &name_prefix) {
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       out_names.push_back((boost::format("%s_p1_%i_%i") % name_prefix % t % i).str());
       out_vlower.push_back(-INFINITY);
@@ -417,7 +461,7 @@ void BoxBoxContact::fillVarNamesAndBounds(vector<string> &out_names, vector<doub
 }
 
 void BoxBoxContact::fillInitialSolution(vector<double> &out) {
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) { // p1
       out.push_back(0);
     }
@@ -432,7 +476,7 @@ void BoxBoxContact::fillInitialSolution(vector<double> &out) {
 
 int BoxBoxContact::setVariables(const vector<Var> &vars, int start_pos) {
   int k = start_pos;
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       m_trajvars.p1(t,i) = vars[k++];
     }
@@ -443,7 +487,7 @@ int BoxBoxContact::setVariables(const vector<Var> &vars, int start_pos) {
       m_trajvars.f(t,i) = vars[k++];
     }
   }
-  assert(k - start_pos == m_prob->m_timesteps*9);
+  assert(k - start_pos == getProb()->m_spec.timesteps*9);
   return k;
 }
 
@@ -484,9 +528,10 @@ static Collision checkBoxBoxCollision(OR::KinBodyPtr box1, OR::KinBodyPtr box2, 
 
 class BoxBoxPenetrationConstraint : public Constraint {
 public:
-  Box *m_box1, *m_box2; int m_t; DynamicsProblem *m_prob;
+  DynamicsProblem *m_prob;
+  Box *m_box1, *m_box2; int m_t;
   BoxBoxPenetrationConstraint(Box *box1, Box *box2, int t, const string &name_prefix)
-    : m_box1(box1), m_box2(box2), m_t(t), m_prob(box1->m_prob), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
+    : m_box1(box1), m_box2(box2), m_t(t), m_prob(box1->getProb()), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
 
   ConstraintType type() { return INEQ; }
 
@@ -626,7 +671,7 @@ class BoxBoxContactForceDirConstraint : public Constraint {
 public:
   BoxBoxContact *m_contact; int m_t; DynamicsProblem *m_prob;
   BoxBoxContactForceDirConstraint(BoxBoxContact *contact, int t, const string &name_prefix)
-    : m_contact(contact), m_t(t), m_prob(contact->m_prob), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
+    : m_contact(contact), m_t(t), m_prob(contact->getProb()), Constraint((boost::format("%s_%d") % name_prefix % t).str()) { }
 
   ConstraintType type() { return INEQ; }
 
@@ -660,9 +705,8 @@ public:
     double fnormal = normal.dot(cont_f_val);
 
     AffExpr e(fnormal);
-    cout << "WUT " << normal.transpose() << endl;
     exprInc(e, varDot(normal, cont_f_vars) - normal.dot(cont_f_val));
-    // TODO: f*n' term?
+    // TODO: f * n' term?
     out->addIneqCnt(-e);
 //
 //    AffExpr dDistOfA = makeDerivExpr(normal, box1_x_vars, box1_x_val);
@@ -684,8 +728,8 @@ public:
 void BoxBoxContact::calcContactDistAndNormal(const vector<double> &x, int t, double &out_dist, Vector3d &out_normal) {
   m_box1->setRaveState(x, t);
   m_box2->setRaveState(x, t);
-  m_prob->m_cc->SetContactDistance(CONTACT_DIST);
-  Collision col(checkBoxBoxCollision(m_box1->m_kinbody, m_box2->m_kinbody, m_prob->m_cc));
+  getProb()->m_cc->SetContactDistance(CONTACT_DIST);
+  Collision col(checkBoxBoxCollision(m_box1->m_kinbody, m_box2->m_kinbody, getProb()->m_cc));
   cout << col << endl;
   out_dist = col.linkA != NULL ? col.distance : CONTACT_DIST;
 
@@ -700,37 +744,37 @@ void BoxBoxContact::calcContactDistAndNormal(const vector<double> &x, int t, dou
 
 void BoxBoxContact::addConstraintsToModel() {
   string name_prefix = (boost::format("contact_%s-%s") % m_box1->getName() % m_box2->getName()).str();
-  ModelPtr model = m_prob->getModel();
+  ModelPtr model = getProb()->getModel();
 
   // contact origin points must stay inside respective boxes (in local coords)
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
-      model->addIneqCnt(m_trajvars.p1(t,i) - m_box1->m_props.half_extents(i), "");
-      model->addIneqCnt(-m_trajvars.p1(t,i) - m_box1->m_props.half_extents(i), "");
+      model->addIneqCnt(m_trajvars.p1(t,i) - m_box1->m_spec.props.half_extents(i), "");
+      model->addIneqCnt(-m_trajvars.p1(t,i) - m_box1->m_spec.props.half_extents(i), "");
 
-      model->addIneqCnt(m_trajvars.p2(t,i) - m_box2->m_props.half_extents(i), "");
-      model->addIneqCnt(-m_trajvars.p2(t,i) - m_box2->m_props.half_extents(i), "");
+      model->addIneqCnt(m_trajvars.p2(t,i) - m_box2->m_spec.props.half_extents(i), "");
+      model->addIneqCnt(-m_trajvars.p2(t,i) - m_box2->m_spec.props.half_extents(i), "");
     }
   }
 
   // contact force must be repulsive
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addConstr(ConstraintPtr(new BoxBoxContactForceDirConstraint(this, t, name_prefix + "_fdir")));
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
+    getProb()->addConstr(ConstraintPtr(new BoxBoxContactForceDirConstraint(this, t, name_prefix + "_fdir")));
   }
 
   // friction cone
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     // TODO
   }
 
   // boxes cannot penetrate
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addConstr(ConstraintPtr(new BoxBoxPenetrationConstraint(m_box1, m_box2, t, name_prefix + "_pen")));
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
+    getProb()->addConstr(ConstraintPtr(new BoxBoxPenetrationConstraint(m_box1, m_box2, t, name_prefix + "_pen")));
   }
 
   // complementarity
-  for (int t = 0; t < m_prob->m_timesteps; ++t) {
-    m_prob->addCost(CostPtr(new BoxBoxComplementarityCost(this, t, name_prefix + "_compl")));
+  for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
+    getProb()->addCost(CostPtr(new BoxBoxComplementarityCost(this, t, name_prefix + "_compl")));
   }
 
   model->update();
@@ -743,6 +787,14 @@ AffExpr BoxBoxContact::getForceExpr(DynamicsObject *o, int t, int i) {
 
 vector<DynamicsObject*> BoxBoxContact::getAffectedObjects() {
   return vector<DynamicsObject*>{m_box1, m_box2};
+}
+
+OptimizationBasePtr BoxGroundContactSpec::realize(DynamicsProblem *prob) {
+  return BoxGroundContactPtr(new BoxGroundContact(*this, prob));
+}
+
+OptimizationBasePtr BoxBoxContactSpec::realize(DynamicsProblem *prob) {
+  return BoxBoxContactPtr(new BoxBoxContact(*this, prob));
 }
 
 } // namespace dynamics
