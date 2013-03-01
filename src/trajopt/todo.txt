@@ -1,42 +1,48 @@
-Make collision checker able to remove objects
 
-Write function to check trajectory safety
 
-More validation on initialization
+Critical
+=========
 
-Don't allow non-robot kinbodies to collide
 
-Partition links into groups and do broadphase filtering
+setcontactdistance screws you up if you have multiple collision cost groups
 
-make optimization parameters settable
+Eventually
+===========
 
-bug when using "active" as manip
+boost python arguments
 
-openrave initfromtrimesh bug
+optimization shouldn't say converged when it got worse
+
+voxel grid collision checking
+
+TrajArray and DblMatrix mean the same thing
+
+PECost is PE^2
+
+merit_coeff ratio and other optimization params
+constraint scaling
+
+Figure out some consistent scheme for specifiying timestep of costs.
 
 velocity cost uses timestamps
-velocity cost uses weights
-
-cloud_drive_reach.py--error
-can't start at non-origin position? (cloud drive reach)
-
-two things don't work about drc example:
-1. go thru obstacle
-2. sometimes don't satisfy pose constraint
-
-ENABLED DOESNT WORK
-
-problem in convexdecomp: we don't check to see if new point is ok in some direction
+make optimization parameters settable
 
 Issue: now the collision checker will fail to find grazing self-collisions, since right now the continuous check
 doesn't look at robot-robot collisions.
 
-modifying bttransformaabb is a bad hack
+make a function specifically for self-collision testing
 
-unittest for removal
+Maybe
+=======
 
-make it easier to print stuff out for debuggin
+error message for unrecognized arguments from json
 
-setcontactdistance screws you up if you have multiple collision cost groups
+Partition links into groups and do broadphase filtering (?)
+Do some smarter self-collision filtering, e.g. with custom code for each robot.
+No need to do all the hulls every time you load up the robot.
 
-optimization changes state
+Modifying bttransformaabb is a bad hack. figure out a better way.
+
+make it easier to print stuff out for debugging optimization
+
+collisionchecker segfaults if bullet world isn't updated

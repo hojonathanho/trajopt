@@ -2,23 +2,17 @@
 #include <json/json.h>
 #include <vector>
 #include <boost/format.hpp>
+#include <string>
+#include <sstream>
+#include "macros.h"
 
-class runtime_error_print : public std::runtime_error {
-public:
-  runtime_error_print(const std::string& s) :
-    std::runtime_error(s) {
-    std::cerr << "\033[1;31mERROR " << s << "\033[0m\n";
-  }
-};
-
-#define MY_EXCEPTION runtime_error_print
 
 namespace json_marshal {
 
-void fromJson(const Json::Value& v, bool& ref);
-void fromJson(const Json::Value& v, int& ref);
-void fromJson(const Json::Value& v, double& ref);
-void fromJson(const Json::Value& v, std::string& ref);
+TRAJOPT_API void fromJson(const Json::Value& v, bool& ref);
+TRAJOPT_API void fromJson(const Json::Value& v, int& ref);
+TRAJOPT_API void fromJson(const Json::Value& v, double& ref);
+TRAJOPT_API void fromJson(const Json::Value& v, std::string& ref);
 template <class T>
 inline void fromJson(const Json::Value& v, T& ref) {
   ref.fromJson(v);
@@ -36,8 +30,7 @@ void fromJsonArray(const Json::Value& parent, std::vector<T>& ref) {
 template <class T>
 void fromJsonArray(const Json::Value& parent, std::vector<T>& ref, int size) {
   if (parent.size() != size) {
-    std::cerr << "expected size: " << size << " got: " << parent << std::endl;
-    throw MY_EXCEPTION("wrong");
+    PRINT_AND_THROW(boost::format("expected list of size size %i. got: %s\n")%size%parent);
   }
   else {
     fromJsonArray(parent, ref);
@@ -65,7 +58,7 @@ void childFromJson(const Json::Value& parent, T& ref, const char* name) {
     fromJson(v, ref);
   }
   else {
-    throw MY_EXCEPTION((boost::format("missing field: %s")%name).str());
+    PRINT_AND_THROW(boost::format("missing field: %s")%name);
   }
 }
 

@@ -4,7 +4,11 @@
 
 namespace trajopt {
 
-class RobotAndDOF {
+
+/**
+Stores an OpenRAVE robot and the active degrees of freedom  
+*/
+class TRAJOPT_API RobotAndDOF {
 public:
   RobotAndDOF(OR::RobotBasePtr _robot, const IntVec& _joint_inds, int _affinedofs=0, const OR::Vector _rotationaxis=OR::Vector()) :
     robot(_robot), joint_inds(_joint_inds), affinedofs(_affinedofs), rotationaxis(_rotationaxis) {}
@@ -22,6 +26,7 @@ public:
   std::vector<KinBody::LinkPtr> GetAffectedLinks();
   void GetAffectedLinks(std::vector<KinBody::LinkPtr>& links, bool only_with_geom, vector<int>& link_inds);
   DblVec RandomDOFValues();
+  void SetRobotActiveDOFs() {robot->SetActiveDOFs(joint_inds, affinedofs);}
 private:
   OR::RobotBasePtr robot;
   IntVec joint_inds;

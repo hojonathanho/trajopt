@@ -1,8 +1,8 @@
 #include "trajopt/problem_description.hpp"
 #include "trajopt/common.hpp"
 #include <boost/foreach.hpp>
-#include "ipi/logging.hpp"
-#include "ipi/sco/expr_ops.hpp"
+#include "utils/logging1.hpp"
+#include "sco/expr_ops.hpp"
 #include "trajopt/kinematic_constraints.hpp"
 #include "trajopt/collision_avoidance.hpp"
 #include "trajopt/rave_utils.hpp"
@@ -17,11 +17,6 @@ using namespace OpenRAVE;
 using namespace trajopt;
 using namespace util;
 
-
-#define FAIL_IF_FALSE(expr) if (!expr) {\
-    throw MY_EXCEPTION( "expected true: " #expr);\
-  }
-
 namespace {
 
 
@@ -29,6 +24,7 @@ bool gRegisteredMakers = false;
 void RegisterMakers() {
 
   CostInfo::RegisterMaker("pose", &PoseCostInfo::create);
+  CostInfo::RegisterMaker("joint_pos", &JointPosCostInfo::create);
   CostInfo::RegisterMaker("joint_vel", &JointVelCostInfo::create);
   CostInfo::RegisterMaker("collision", &CollisionCostInfo::create);
   CostInfo::RegisterMaker("continuous_collision", &ContinuousCollisionCostInfo::create);
@@ -62,7 +58,7 @@ RobotAndDOFPtr RADFromName(const string& name, RobotBasePtr robot) {
     else if (KinBody::JointPtr joint = robot->GetJoint(component)) {
       dof_inds.push_back(joint->GetDOFIndex());
     }
-    else throw MY_EXCEPTION( (boost::format("error in reading manip description: %s must be a manipulator, link, or 'base'")%component).str() );
+    else PRINT_AND_THROW( boost::format("error in reading manip description: %s must be a manipulator, link, or 'base'")%component );
   }
   return RobotAndDOFPtr(new RobotAndDOF(robot, dof_inds, affinedofs, rotationaxis));
 }
@@ -96,7 +92,7 @@ void fromJson(const Json::Value& v, Vector4d& x) {
 
 namespace trajopt {
 
-ProblemConstructionInfo* gPCI;
+TRAJOPT_API ProblemConstructionInfo* gPCI;
 
 void BasicInfo::fromJson(const Json::Value& v) {
   childFromJson(v, start_fixed, "start_fixed", true);
@@ -112,7 +108,7 @@ void fromJson(const Json::Value& v, CostInfoPtr& cost) {
   string type;
   childFromJson(v, type, "type");
   cost = CostInfo::fromName(type);
-  if (!cost) throw MY_EXCEPTION( (boost::format("failed to construct cost named %s")%type).str() );
+  if (!cost) PRINT_AND_THROW( boost::format("failed to construct cost named %s")%type );
   cost->fromJson(v);
   childFromJson(v, cost->name, "name", type);
 }
@@ -140,9 +136,9 @@ void CostInfo::RegisterMaker(const std::string& type, MakerFunc f) {
 void fromJson(const Json::Value& v, CntInfoPtr& cnt) {
   string type;
   childFromJson(v, type, "type");
-  IPI_LOG_DEBUG("reading constraint: %s", type);
+  LOG_DEBUG("reading constraint: %s", type.c_str());
   cnt = CntInfo::fromName(type);
-  if (!cnt) throw MY_EXCEPTION( (boost::format("failed to construct constraint named %s")%type).str() );
+  if (!cnt) PRINT_AND_THROW( boost::format("failed to construct constraint named %s")%type );
   cnt->fromJson(v);
   childFromJson(v, cnt->name, "name", type);
 }
@@ -162,22 +158,35 @@ void InitInfo::fromJson(const Json::Value& v) {
   string type_str;
   childFromJson(v, type_str, "type");
   int n_steps = gPCI->basic_info.n_steps;
+  int n_dof = gPCI->rad->GetDOF();
 
   if (type_str == "stationary") {
-    data = toVectorXd(gPCI->rad->GetDOFValues()).transpose().replicate(n_steps, 1);;
+    data = toVectorXd(gPCI->rad->GetDOFValues()).transpose().replicate(n_steps, 1);
   }
   else if (type_str == "given_traj") {
     FAIL_IF_FALSE(v.isMember("data"));
     const Value& vdata = v["data"];
     if (vdata.size() != n_steps) {
-      throw MY_EXCEPTION("given initialization traj has wrong length");
+      PRINT_AND_THROW("given initialization traj has wrong length");
     }
-    int n_dof = gPCI->rad->GetDOF();
     data.resize(n_steps, n_dof);
     for (int i=0; i < n_steps; ++i) {
       DblVec row;
       fromJsonArray(vdata[i], row, n_dof);
       data.row(i) = toVectorXd(row);
+    }
+  }
+  else if (type_str == "straight_line") {
+    FAIL_IF_FALSE(v.isMember("endpoint"));
+    DblVec endpoint;
+    childFromJson(v, endpoint, "endpoint");
+    if (endpoint.size() != n_dof) {
+      PRINT_AND_THROW(boost::format("wrong number of dof values in initialization. expected %i got %j")%n_dof%endpoint.size());
+    }
+    data = TrajArray(n_steps, n_dof);
+    DblVec start = gPCI->rad->GetDOFValues();
+    for (int idof = 0; idof < n_dof; ++idof) {
+      data.col(idof) = VectorXd::LinSpaced(n_steps, start[idof], endpoint[idof]);
     }
   }
 
@@ -188,11 +197,11 @@ void ProblemConstructionInfo::fromJson(const Value& v) {
 
   RobotBasePtr robot = (basic_info.robot=="") ? GetRobot(*env) : GetRobotByName(*env, basic_info.robot);
   if (!robot) {
-    throw MY_EXCEPTION("couldn't get robot");
+    PRINT_AND_THROW("couldn't get robot");
   }
   rad = RADFromName(basic_info.manip, robot);
   if (!rad) {
-    throw MY_EXCEPTION( (boost::format("couldn't get manip %s")%basic_info.manip).str() );
+    PRINT_AND_THROW( boost::format("couldn't get manip %s")%basic_info.manip );
   }
 
   gPCI = this;
@@ -220,6 +229,7 @@ TrajOptResult::TrajOptResult(OptResults& opt, TrajOptProb& prob) :
 }
 
 TrajOptResultPtr OptimizeProblem(TrajOptProbPtr prob, bool plot) {
+  RobotBase::RobotStateSaver saver = prob->GetRAD()->Save();
   BasicTrustRegionSQP opt(prob);
   opt.max_iter_ = 30;
   opt.min_approx_improve_frac_ = .001;
@@ -259,7 +269,7 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
 
   if (bi.start_fixed) {
     if (pci.init_info.data.rows() > 0 && !allClose(toVectorXd(cur_dofvals), pci.init_info.data.row(0))) {
-      throw MY_EXCEPTION( "robot dof values don't match initialization. I don't know what you want me to use for the dof values");
+      PRINT_AND_THROW( "robot dof values don't match initialization. I don't know what you want me to use for the dof values");
     }
     for (int j=0; j < n_dof; ++j) {
       prob->addLinearConstr(exprSub(AffExpr(prob->m_traj_vars(0,j)), cur_dofvals[j]), EQ);
@@ -274,26 +284,12 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
     }
   }
 
-  vector<string> cost_names;
   BOOST_FOREACH(const CostInfoPtr& ci, pci.cost_infos) {
-    int n_costs_before = prob->getNumCosts();
     ci->hatch(*prob);
-    int n_costs_after = prob->getNumCosts();
-    for (int i=0; i < n_costs_after - n_costs_before; ++i) cost_names.push_back(ci->name);
   }
-
-  vector<string> cnt_names;
   BOOST_FOREACH(const CntInfoPtr& ci, pci.cnt_infos) {
-    int n_cnts_before = prob->getNumConstraints();
     ci->hatch(*prob);
-    int n_cnts_after = prob->getNumConstraints();
-    for (int i=0; i < n_cnts_after - n_cnts_before; ++i) cnt_names.push_back(ci->name);
   }
-
-  int iCost=0, iCnt=0;
-  BOOST_FOREACH(const CostPtr& cost, prob->getCosts()) cost->setName(cost_names[iCost++]);
-  BOOST_FOREACH(const ConstraintPtr& cnt, prob->getConstraints()) cnt->setName(cnt_names[iCnt++]);
-
 
   prob->SetInitTraj(pci.init_info.data);
 
@@ -343,7 +339,7 @@ void PoseCostInfo::fromJson(const Value& v) {
   childFromJson(params, linkstr, "link");
   link = gPCI->rad->GetRobot()->GetLink(linkstr);
   if (!link) {
-    throw MY_EXCEPTION( (boost::format("invalid link name: %s")%linkstr).str());
+    PRINT_AND_THROW(boost::format("invalid link name: %s")%linkstr);
   }
 }
 CostInfoPtr PoseCostInfo::create() {
@@ -351,6 +347,7 @@ CostInfoPtr PoseCostInfo::create() {
 }
 void PoseCostInfo::hatch(TrajOptProb& prob) {
   prob.addCost(CostPtr(new CartPoseCost(prob.GetVarRow(timestep), toRaveTransform(wxyz, xyz), rot_coeffs, pos_coeffs, prob.GetRAD(), link)));
+  prob.getCosts().back()->setName(name);
 }
 
 void PoseCntInfo::fromJson(const Value& v) {
@@ -366,15 +363,40 @@ void PoseCntInfo::fromJson(const Value& v) {
   childFromJson(params, linkstr, "link");
   link = gPCI->rad->GetRobot()->GetLink(linkstr);
   if (!link) {
-    throw MY_EXCEPTION( (boost::format("invalid link name: %s")%linkstr).str());
+    PRINT_AND_THROW(boost::format("invalid link name: %s")%linkstr);
   }
 }
+
+void JointPosCostInfo::fromJson(const Value& v) {
+  FAIL_IF_FALSE(v.isMember("params"));
+  int n_steps = gPCI->basic_info.n_steps;
+  const Value& params = v["params"];
+  childFromJson(params, vals, "vals");
+  childFromJson(params, coeffs, "coeffs");
+  if (coeffs.size() == 1) coeffs = DblVec(n_steps, coeffs[0]);
+
+  int n_dof = gPCI->rad->GetDOF();
+  if (vals.size() != n_dof) {
+    PRINT_AND_THROW( boost::format("wrong number of dof vals. expected %i got %i")%n_dof%vals.size());
+  }
+  childFromJson(params, timestep, "timestep", gPCI->basic_info.n_steps-1);
+}
+void JointPosCostInfo::hatch(TrajOptProb& prob) {
+  prob.addCost(CostPtr(new JointPosCost(prob.GetVarRow(timestep), toVectorXd(vals), toVectorXd(coeffs))));
+  prob.getCosts().back()->setName(name);  
+}
+CostInfoPtr JointPosCostInfo::create() {
+  return CostInfoPtr(new JointPosCostInfo());
+}
+
+
 CntInfoPtr PoseCntInfo::create() {
   return CntInfoPtr(new PoseCntInfo());
 }
 void PoseCntInfo::hatch(TrajOptProb& prob) {
   VectorXd coeffs(6); coeffs << rot_coeffs, pos_coeffs;
-  prob.addConstr(ConstraintPtr(new CartPoseConstraint(prob.GetVarRow(timestep), toRaveTransform(wxyz, xyz), prob.GetRAD(), link, toMask(coeffs))));
+  prob.addConstr(ConstraintPtr(new CartPoseConstraint(prob.GetVarRow(timestep), toRaveTransform(wxyz, xyz), prob.GetRAD(), link, coeffs)));
+  prob.getEqConstraints().back()->setName(name);
 }
 
 void CartVelCntInfo::fromJson(const Value& v) {
@@ -384,11 +406,14 @@ void CartVelCntInfo::fromJson(const Value& v) {
   childFromJson(params, last_step, "last_step");
   childFromJson(params, distance_limit,"distance_limit");
 
+  FAIL_IF_FALSE((first_step >= 0) && (first_step <= gPCI->basic_info.n_steps-1) && (first_step < last_step));
+  FAIL_IF_FALSE((last_step > 0) && (last_step <= gPCI->basic_info.n_steps-1));
+
   string linkstr;
   childFromJson(params, linkstr, "link");
   link = gPCI->rad->GetRobot()->GetLink(linkstr);
   if (!link) {
-    throw MY_EXCEPTION( (boost::format("invalid link name: %s")%linkstr).str());
+    PRINT_AND_THROW( boost::format("invalid link name: %s")%linkstr);
   }
 }
 CntInfoPtr CartVelCntInfo::create() {
@@ -397,6 +422,7 @@ CntInfoPtr CartVelCntInfo::create() {
 void CartVelCntInfo::hatch(TrajOptProb& prob) {
   for (int iStep = first_step; iStep < last_step; ++iStep) {
     prob.addConstr(ConstraintPtr(new CartVelConstraint(prob.GetVarRow(iStep), prob.GetVarRow(iStep+1), prob.GetRAD(), link, distance_limit)));
+    prob.getIneqConstraints().back()->setName(name);
   }
 }
 
@@ -408,15 +434,15 @@ void JointVelCostInfo::fromJson(const Value& v) {
   int n_dof = gPCI->rad->GetDOF();
   if (coeffs.size() == 1) coeffs = DblVec(n_dof, coeffs[0]);
   else if (coeffs.size() != n_dof) {
-    throw MY_EXCEPTION( (boost::format("wrong number of coeffs. expected %i got %i")%n_dof%coeffs.size()).str() );
+    PRINT_AND_THROW( boost::format("wrong number of coeffs. expected %i got %i")%n_dof%coeffs.size());
   }
-
 }
 CostInfoPtr JointVelCostInfo::create() {
   return CostInfoPtr(new JointVelCostInfo());
 }
 void JointVelCostInfo::hatch(TrajOptProb& prob) {
   prob.addCost(CostPtr(new JointVelCost(prob.GetVars(), toVectorXd(coeffs))));
+  prob.getCosts().back()->setName(name);
 }
 
 void CollisionCostInfo::fromJson(const Value& v) {
@@ -427,17 +453,18 @@ void CollisionCostInfo::fromJson(const Value& v) {
   childFromJson(params, coeffs,"coeffs");
   if (coeffs.size() == 1) coeffs = DblVec(n_steps, coeffs[0]);
   else if (coeffs.size() != n_steps) {
-    throw MY_EXCEPTION( (boost::format("wrong size: coeffs. expected %i got %i")%n_steps%coeffs.size()).str() );
+    PRINT_AND_THROW( boost::format("wrong size: coeffs. expected %i got %i")%n_steps%coeffs.size() );
   }
   childFromJson(params, dist_pen,"dist_pen");
   if (dist_pen.size() == 1) dist_pen = DblVec(n_steps, dist_pen[0]);
   else if (dist_pen.size() != n_steps) {
-    throw MY_EXCEPTION( (boost::format("wrong size: dist_pen. expected %i got %i")%n_steps%dist_pen.size()).str() );
+    PRINT_AND_THROW( boost::format("wrong size: dist_pen. expected %i got %i")%n_steps%dist_pen.size() );
   }
 }
 void CollisionCostInfo::hatch(TrajOptProb& prob) {
   for (int i=0; i < prob.GetNumSteps(); ++i) {
     prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetVarRow(i))));
+    prob.getCosts().back()->setName( (boost::format("%s_%i")%name%i).str() );
   }
   CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(*prob.GetEnv());
   cc->SetContactDistance(*std::max_element(dist_pen.begin(), dist_pen.end()) + .04);
@@ -456,20 +483,20 @@ void ContinuousCollisionCostInfo::fromJson(const Value& v) {
   childFromJson(params, last_step, "last_step", n_steps-1);
   childFromJson(params, coeffs, "coeffs");
   int n_terms = last_step - first_step;
-  cout << "n terms: " << n_terms << endl;
   if (coeffs.size() == 1) coeffs = DblVec(n_terms, coeffs[0]);
   else if (coeffs.size() != n_terms) {
-    throw MY_EXCEPTION( (boost::format("wrong size: coeffs. expected %i got %i")%n_terms%coeffs.size()).str() );
+    PRINT_AND_THROW (boost::format("wrong size: coeffs. expected %i got %i")%n_terms%coeffs.size());
   }
   childFromJson(params, dist_pen,"dist_pen");
   if (dist_pen.size() == 1) dist_pen = DblVec(n_terms, dist_pen[0]);
   else if (dist_pen.size() != n_terms) {
-    throw MY_EXCEPTION( (boost::format("wrong size: dist_pen. expected %i got %i")%n_terms%dist_pen.size()).str() );
+    PRINT_AND_THROW(boost::format("wrong size: dist_pen. expected %i got %i")%n_terms%dist_pen.size());
   }
 }
 void ContinuousCollisionCostInfo::hatch(TrajOptProb& prob) {
   for (int i=first_step; i < last_step; ++i) {
     prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetVarRow(i), prob.GetVarRow(i+1))));
+    prob.getCosts().back()->setName( (boost::format("%s_%i")%name%i).str() );
   }
   CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(*prob.GetEnv());
   cc->SetContactDistance(*std::max_element(dist_pen.begin(), dist_pen.end()) + .04);
@@ -487,7 +514,7 @@ void JointConstraintInfo::fromJson(const Value& v) {
 
   int n_dof = gPCI->rad->GetDOF();
   if (vals.size() != n_dof) {
-    throw MY_EXCEPTION( (boost::format("wrong number of dof vals. expected %i got %i")%n_dof%vals.size()).str());
+    PRINT_AND_THROW( boost::format("wrong number of dof vals. expected %i got %i")%n_dof%vals.size());
   }
   childFromJson(params, timestep, "timestep", gPCI->basic_info.n_steps-1);
 }
@@ -496,7 +523,7 @@ void JointConstraintInfo::hatch(TrajOptProb& prob) {
   VarVector vars = prob.GetVarRow(timestep);
   int n_dof = vars.size();
   for (int j=0; j < n_dof; ++j) {
-    prob.addLinearConstr(exprSub(AffExpr(vars[j]), vals[j]), EQ);
+    prob.addLinearConstr(exprSub(AffExpr(vars[j]), vals[j]), EQ);    
   }
 }
 CntInfoPtr JointConstraintInfo::create() {

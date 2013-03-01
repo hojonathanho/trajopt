@@ -2,6 +2,13 @@ from __future__ import division
 import openravepy as rave
 import numpy as np
 
+def create_trimesh(env, verts, faces, name="mesh"):  
+  body = rave.RaveCreateKinBody(env, "")
+  body.InitFromTrimesh(trimesh=rave.TriMesh(verts, faces),draw=True) 
+  body.SetName(name) 
+  env.Add(body)   
+  return body
+
 def create_box_from_bounds(env, bounds, name="box"):
   xmin, xmax, ymin, ymax, zmin, zmax = bounds
   xml_str = """
@@ -85,4 +92,36 @@ def create_mesh_box(env, center, half_extents, name="box"):
     box.SetTransform(trans)
     env.Add(box)
     return box
+
+def create_spheres(env, points, radii = .01, name="spheres"):
+    points = np.asarray(points)
+    assert points.ndim == 2
+    if np.isscalar(radii):
+        radii = np.ones(len(points)) * radii
+    else:
+        assert len(radii) == len(points)
+    sphereinfo = np.empty((len(points), 4))
+    sphereinfo[:,:3] = points
+    sphereinfo[:,3] = radii
+    spheres = rave.RaveCreateKinBody(env, "")
+    spheres.InitFromSpheres(sphereinfo, True)
+    spheres.SetName(name)
+    env.Add(spheres)
+    return spheres
+    
+def create_boxes(env, points, radii = .01, name="boxes"):
+    points = np.asarray(points)
+    assert points.ndim == 2
+    
+    radii2d = np.empty((len(points),3))
+    radii2d = radii
+    
+    boxinfo = np.empty((len(points), 6))
+    boxinfo[:,:3] = points
+    boxinfo[:,3:6] = radii2d
+    boxes = rave.RaveCreateKinBody(env, "")
+    boxes.InitFromBoxes(boxinfo, True)
+    boxes.SetName(name)
+    env.Add(boxes)
+    return boxes
 

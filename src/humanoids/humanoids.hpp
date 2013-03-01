@@ -1,35 +1,38 @@
 #pragma once
 #include <Eigen/Core>
 #include <trajopt/common.hpp>
-#include "ipi/sco/modeling_utils.hpp"
+#include "sco/modeling_utils.hpp"
 
 namespace trajopt {
 using Eigen::MatrixX2d;
 
-struct ZMP: public Constraint, public Plotter {
+struct ZMPConstraint : public IneqConstraint, public Plotter {
   RobotAndDOFPtr m_rad;
   VarVector m_vars;
   MatrixX2d m_ab, m_pts;
   VectorXd m_c;
-  ZMP(RobotAndDOFPtr rad, const MatrixX2d& hullpts, const VarVector& vars);
+  ZMPConstraint(RobotAndDOFPtr rad, const MatrixX2d& hullpts, const VarVector& vars);
   DblVec value(const DblVec&);
   ConvexConstraintsPtr convex(const DblVec&, Model* model);
   void Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles);
-  ConstraintType type() {return INEQ;}
 
 };
 
 
-struct StaticTorque : public CostFromNumDiffErr {
+struct StaticTorqueCost : public CostFromErrFunc {
   RobotAndDOFPtr m_rad;
   VarVector m_vars;
-  StaticTorque(RobotAndDOFPtr rad, const VarVector& vars, double coeff);
+  StaticTorqueCost(RobotAndDOFPtr rad, const VarVector& vars, double coeff);
 };
 
-struct PECost : public CostFromNumDiffErr {
+struct PECost : public CostFromErrFunc {
   RobotAndDOFPtr m_rad;
   VarVector m_vars;
   PECost(RobotAndDOFPtr rad, const VarVector& vars, double coeff);
+};
+
+struct FootHeightConstraint : public ConstraintFromFunc {
+  FootHeightConstraint(RobotAndDOFPtr rad, OpenRAVE::KinBody::LinkPtr link, double height, const VarVector& vars);
 };
 
 }

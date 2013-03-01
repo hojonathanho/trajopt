@@ -5,20 +5,9 @@
 #include <iostream>
 #include <openrave/openrave.h>
 #include "robot_and_dof.hpp"
+#include "macros.h"
 
 namespace trajopt {
-
-class CollisionPairIgnorer {
-public:
-  void ExcludePair(const KinBody::Link& link1,
-                   const KinBody::Link& link2);
-  void AddExcludes(const CollisionPairIgnorer& other);
-  bool CanCollide(const KinBody::Link& link1,
-                   const KinBody::Link& link2) const;
-private:
-  typedef std::pair<const KinBody::Link*, const KinBody::Link*> LinkPair;
-  std::set<LinkPair> m_pairs;
-};
 
 struct Collision {
   const OR::KinBody::Link* linkA;
@@ -29,17 +18,15 @@ struct Collision {
   Collision(const KinBody::Link* linkA, const KinBody::Link* linkB, const OR::Vector& ptA, const OR::Vector& ptB, const OR::Vector& normalB2A, double distance, float weight=1, float time=0) :
     linkA(linkA), linkB(linkB), ptA(ptA), ptB(ptB), normalB2A(normalB2A), distance(distance), weight(weight), time(0) {}
 };
-std::ostream& operator<<(std::ostream&, const Collision&);
+TRAJOPT_API std::ostream& operator<<(std::ostream&, const Collision&);
 
 
-class CollisionChecker : public OR::UserData {
+/** 
+Each CollisionChecker object has a copy of the world, so for performance, don't make too many copies  
+*/ 
+class TRAJOPT_API CollisionChecker : public OR::UserData {
 public:
-  /** 
-  Each CollisionChecker object has a copy of the world, so for performance, don't make too many copies  
-  */ 
-  
-  /** CollisionPairIgnorer argument is optional in the following methods */
-  
+
   /** check everything vs everything else */
   virtual void AllVsAll(vector<Collision>& collisions)=0;
   /** check link vs everything else */
@@ -57,26 +44,32 @@ public:
   virtual void PlotCollisionGeometry(vector<OpenRAVE::GraphHandlePtr>&) {throw std::runtime_error("not implemented");}
 
   virtual void ContinuousCheckTrajectory(const TrajArray& traj, RobotAndDOF& rad, vector<Collision>& collisions) {throw std::runtime_error("not implemented");}
+  
+  /** Find contacts between swept-out shapes of robot links and everything in the environment, as robot goes from startjoints to endjoints */ 
   virtual void CastVsAll(RobotAndDOF& rad, const vector<KinBody::LinkPtr>& links, const DblVec& startjoints, const DblVec& endjoints, vector<Collision>& collisions) {throw std::runtime_error("not implemented");}
 
+  /** Finds all self collisions when all joints are set to zero, and ignore collisions between the colliding links */
   void IgnoreZeroStateSelfCollisions();
   void IgnoreZeroStateSelfCollisions(OpenRAVE::KinBodyPtr body);
 
+  /** Prevent this pair of links from colliding */
+  virtual void ExcludeCollisionPair(const KinBody::Link& link0, const KinBody::Link& link1) = 0;
+
+
   OpenRAVE::EnvironmentBaseConstPtr GetEnv() {return m_env;}
-  CollisionPairIgnorer& GetIgnorer() {return m_ignorer;}
 
   virtual ~CollisionChecker() {}
+  /** Get or create collision checker for this environment */
   static boost::shared_ptr<CollisionChecker> GetOrCreate(OR::EnvironmentBase& env);
 protected:
   CollisionChecker(OpenRAVE::EnvironmentBaseConstPtr env) : m_env(env) {}
   OpenRAVE::EnvironmentBaseConstPtr m_env;
-  CollisionPairIgnorer m_ignorer;
 };
 typedef boost::shared_ptr<CollisionChecker> CollisionCheckerPtr;
 
-CollisionCheckerPtr CreateCollisionChecker(OR::EnvironmentBaseConstPtr env);
+CollisionCheckerPtr TRAJOPT_API CreateCollisionChecker(OR::EnvironmentBaseConstPtr env);
 
-void PlotCollisions(const std::vector<Collision>& collisions, OR::EnvironmentBase& env, vector<OR::GraphHandlePtr>& handles, double safe_dist);
+TRAJOPT_API void PlotCollisions(const std::vector<Collision>& collisions, OR::EnvironmentBase& env, vector<OR::GraphHandlePtr>& handles, double safe_dist);
 
 }
 

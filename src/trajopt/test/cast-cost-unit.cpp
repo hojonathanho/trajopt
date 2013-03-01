@@ -5,7 +5,7 @@
 #include "utils/stl_to_string.hpp"
 #include "trajopt/common.hpp"
 #include "trajopt/problem_description.hpp"
-#include "ipi/sco/optimizers.hpp"
+#include "sco/optimizers.hpp"
 #include "trajopt/rave_utils.hpp"
 #include "osgviewer/osgviewer.hpp"
 #include <ctime>
@@ -70,7 +70,7 @@ TEST(cast, boxes) {
   if (plotting) opt.addCallback(PlotCallback(*prob));
   opt.initialize(trajToDblVec(prob->GetInitTraj()));
   opt.optimize();
-  if (plotting) PlotCallback(*prob)(opt.x());
+  if (plotting) PlotCallback(*prob)(NULL, opt.x());
 
 
 
@@ -91,7 +91,7 @@ int main(int argc, char** argv)
 
   ::testing::InitGoogleTest(&argc, argv);
   RaveInitialize(false);
-  RaveSetDebugLevel(Level_Debug);
+  if (verbose) RaveSetDebugLevel(Level_Debug);
   int result = RUN_ALL_TESTS();
   RaveDestroy();
   return result;

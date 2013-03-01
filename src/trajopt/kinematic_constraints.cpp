@@ -2,9 +2,9 @@
 #include "trajopt/kinematic_constraints.hpp"
 #include "trajopt/utils.hpp"
 #include "trajopt/rave_utils.hpp"
-#include "ipi/logging.hpp"
-#include "ipi/sco/expr_ops.hpp"
-#include "ipi/sco/modeling_utils.hpp"
+#include "utils/logging1.hpp"
+#include "sco/expr_ops.hpp"
+#include "sco/modeling_utils.hpp"
 #include <boost/format.hpp>
 #include <boost/bind.hpp>
 #include <iostream>
@@ -13,7 +13,7 @@
 #include "utils/eigen_conversions.hpp"
 #include "utils/eigen_slicing.hpp"
 using namespace std;
-using namespace ipi::sco;
+using namespace sco;
 using namespace Eigen;
 using namespace util;
 
@@ -60,7 +60,7 @@ void makeTrajVariablesAndBounds(int n_steps, RobotAndDOFPtr manip, OptProb& prob
   int n_dof = manip->GetDOF();
   DblVec lower, upper;
   manip->GetDOFLimits(lower, upper);
-  IPI_LOG_INFO("Dof limits: %s, %s", Str(lower), Str(upper));
+  LOG_INFO("Dof limits: %s, %s", CSTR(lower), CSTR(upper));
   vector<double> vlower, vupper;
   vector<string> names;
   for (int i=0; i < n_steps; ++i) {
@@ -76,6 +76,25 @@ void makeTrajVariablesAndBounds(int n_steps, RobotAndDOFPtr manip, OptProb& prob
 
 }
 
+JointPosCost::JointPosCost(const VarVector& vars, const VectorXd& vals, const VectorXd& coeffs) :
+    Cost("JointVel"), vars_(vars), vals_(vals), coeffs_(coeffs) {
+    for (int i=0; i < vars.size(); ++i) {
+      if (coeffs[i] > 0) {
+        AffExpr diff = exprSub(AffExpr(vars[i]), AffExpr(vals[i]));
+        exprInc(expr_, exprMult(exprSquare(diff), coeffs[i]));
+      }
+    }
+}
+double JointPosCost::value(const vector<double>& xvec) {
+  VectorXd dofs = getVec(xvec, vars_);
+  return ((dofs - vals_).array().square() * coeffs_.array()).sum();
+}
+ConvexObjectivePtr JointPosCost::convex(const vector<double>& x, Model* model) {
+  ConvexObjectivePtr out(new ConvexObjective(model));
+  out->addQuadExpr(expr_);
+  return out;
+}
+
 
 JointVelCost::JointVelCost(const VarArray& vars, const VectorXd& coeffs) :
     Cost("JointVel"), vars_(vars), coeffs_(coeffs) {
@@ -88,8 +107,6 @@ JointVelCost::JointVelCost(const VarArray& vars, const VectorXd& coeffs) :
     }
   }
 }
-
-
 double JointVelCost::value(const vector<double>& xvec) {
   MatrixXd traj = getTraj(xvec, vars_);
   return (diffAxis0(traj).array().square().matrix() * coeffs_.asDiagonal()).sum();
@@ -114,7 +131,6 @@ JointAccCost::JointAccCost(const VarArray& vars, const VectorXd& coeffs) :
     }
   }
 }
-
 double JointAccCost::value(const vector<double>& xvec) {
   MatrixXd traj = getTraj(xvec, vars_);
   return (diffAxis0(diffAxis0(traj)).array().square().matrix() * coeffs_.asDiagonal()).sum();
@@ -132,10 +148,12 @@ struct CartPoseErrCalculator : public VectorOfVector {
   OR::Transform pose_inv_;
   RobotAndDOFPtr manip_;
   OR::KinBody::LinkPtr link_;
-  CartPoseErrCalculator(const OR::Transform& pose, RobotAndDOFPtr manip, OR::KinBody::LinkPtr link) :
+  VectorXd coeffs_;
+  CartPoseErrCalculator(const OR::Transform& pose, RobotAndDOFPtr manip, OR::KinBody::LinkPtr link, const VectorXd& coeffs) :
   pose_inv_(pose.inverse()),
   manip_(manip),
-  link_(link)
+  link_(link),
+  coeffs_(coeffs)
   {}
 //  CartPoseCostCalculator(const CartPoseCostCalculator& other) : pose_(other.pose_), manip_(other.manip_), rs_(other.rs_) {}
   VectorXd operator()(const VectorXd& dof_vals) const {
@@ -143,14 +161,14 @@ struct CartPoseErrCalculator : public VectorOfVector {
     OR::Transform newpose = link_->GetTransform();
 
     OR::Transform pose_err = pose_inv_ * newpose;
-    VectorXd err = concat(rotVec(pose_err.rot), toVector3d(pose_err.trans));
+    VectorXd err = coeffs_.cwiseProduct(concat(rotVec(pose_err.rot), toVector3d(pose_err.trans)));
     return err;
   }
 };
 
 CartPoseCost::CartPoseCost(const VarVector& vars, const OR::Transform& pose, const Vector3d& rot_coeffs,
     const Vector3d& pos_coeffs, RobotAndDOFPtr manip, KinBody::LinkPtr link) :
-    CostFromNumDiffErr(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link)),
+    CostFromErrFunc(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link, VectorXd::Ones(6))),
         vars, concat(rot_coeffs, pos_coeffs), ABS, "CartPose")
 {}
 void CartPoseCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
@@ -165,9 +183,9 @@ void CartPoseCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<O
 
 
 CartPoseConstraint::CartPoseConstraint(const VarVector& vars, const OR::Transform& pose,
-    RobotAndDOFPtr manip, KinBody::LinkPtr link, const BoolVec& enabled) :
-    ConstraintFromNumDiff(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link)),
-        vars, EQ, "CartPose", enabled)
+    RobotAndDOFPtr manip, KinBody::LinkPtr link, const VectorXd& coeffs) :
+    ConstraintFromFunc(VectorOfVectorPtr(new CartPoseErrCalculator(pose, manip, link, coeffs)),
+        vars, EQ, "CartPose")
 {
 }
 
@@ -192,7 +210,6 @@ struct CartPositionErrCalculator {
   manip_(manip),
   link_(link)
   {}
-//  CartPoseCostCalculator(const CartPoseCostCalculator& other) : pose_(other.pose_), manip_(other.manip_), rs_(other.rs_) {}
   VectorXd operator()(const VectorXd& dof_vals) {
     manip_->SetDOFValues(toDblVec(dof_vals));
     OR::Transform newpose = link_->GetTransform();
@@ -200,13 +217,29 @@ struct CartPositionErrCalculator {
   }
 };
 
-#if 0
-class CartPositionConstraint : public CostFromNumDiffErr, public Plottable {
-  CartPositionConstraint(const VarVector& vars, const Vector3d& pt, RobotAndDOFPtr manip, KinBody::LinkPtr link) :
-    CostFromNumDiffErr(CartPositionErrCalculator(pt, manip, link), vars, EQ, "CartPosition") {}
-};
-#endif
+struct CartVelJacCalculator : MatrixOfVector {
+  RobotAndDOFPtr manip_;
+  KinBody::LinkPtr link_;
+  double limit_;
+  CartVelJacCalculator(RobotAndDOFPtr manip, KinBody::LinkPtr link, double limit) :
+    manip_(manip), link_(link), limit_(limit) {}
 
+  MatrixXd operator()(const VectorXd& dof_vals) const {
+    int n_dof = manip_->GetDOF();
+    MatrixXd out(6, 2*n_dof);
+    manip_->SetDOFValues(toDblVec(dof_vals.topRows(n_dof)));
+    OR::Transform pose0 = link_->GetTransform();
+    MatrixXd jac0 = manip_->PositionJacobian(link_->GetIndex(), pose0.trans);
+    manip_->SetDOFValues(toDblVec(dof_vals.bottomRows(n_dof)));
+    OR::Transform pose1 = link_->GetTransform();
+    MatrixXd jac1 = manip_->PositionJacobian(link_->GetIndex(), pose1.trans);
+    out.block(0,0,3,n_dof) = -jac0;
+    out.block(0,n_dof,3,n_dof) = jac1;
+    out.block(3,0,3,n_dof) = jac0;
+    out.block(3,n_dof,3,n_dof) = -jac1;
+    return out;
+  }
+};
 
 struct CartVelCalculator : VectorOfVector {
   RobotAndDOFPtr manip_;
@@ -223,14 +256,15 @@ struct CartVelCalculator : VectorOfVector {
     OR::Transform pose1 = link_->GetTransform();
     VectorXd out(6);
     out.topRows(3) = toVector3d(pose1.trans - pose0.trans - OR::Vector(limit_,limit_,limit_));
-    out.bottomRows(3) = toVector3d(OR::Vector(limit_,limit_,limit_) - pose1.trans + pose0.trans);
+    out.bottomRows(3) = toVector3d( - pose1.trans + pose0.trans - OR::Vector(limit_, limit_, limit_));
     return out;
   }
 };
 
 CartVelConstraint::CartVelConstraint(const VarVector& step0vars, const VarVector& step1vars, RobotAndDOFPtr manip, KinBody::LinkPtr link, double distlimit) :
-        ConstraintFromNumDiff(VectorOfVectorPtr(new CartVelCalculator(manip, link, distlimit)),
-            concat(step0vars, step1vars), INEQ, "CartVel")
+        ConstraintFromFunc(VectorOfVectorPtr(new CartVelCalculator(manip, link, distlimit)),
+                           MatrixOfVectorPtr(new CartVelJacCalculator(manip, link, distlimit)),
+                          concat(step0vars, step1vars), INEQ, "CartVel")
 {}
 
 
@@ -260,17 +294,3 @@ struct UpErrorCalculator {
   }
 };
 }
-
-#if 0
-CostPtr makeUpCost(const VarVector& vars, const Vector3d& dir_local, const Vector3d& goal_dir_world, double coeff, RobotAndDOFPtr manip, KinBody::LinkPtr link) {
-  VectorOfVector f = UpErrorCalculator(dir_local, goal_dir_world, manip, link);
-  // why does this work without a copy constructor?
-  return CostPtr(new CostFromNumDiffErr(f, vars, coeff*Vector2d::Ones(), ABS, "Up"));
-}
-
-ConstraintPtr makeUpConstraint(const VarVector& vars, const Vector3d& dir_local, const Vector3d& goal_dir_world, RobotAndDOFPtr manip, KinBody::LinkPtr link) {
-  VectorOfVector f = UpErrorCalculator(dir_local, goal_dir_world, manip, link);
-  return ConstraintPtr(new ConstraintFromNumDiff(f, vars, EQ, "Up"));
-}
-#endif
-

@@ -38,8 +38,10 @@ static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<Constrai
   }
   gTrajHandles.clear();
   gTrajPlayPos = -1;
-  PlotTraj(viewer, rad, getTraj(x, vars), gTrajHandles);
+  TrajArray traj = getTraj(x, vars);
+  PlotTraj(viewer, rad, traj, gTrajHandles);
   viewer.Idle();
+  rad.SetDOFValues(toDblVec(traj.row(traj.rows()-1)));
   gTrajHandles.clear();
 }
 
@@ -90,7 +92,7 @@ Optimizer::Callback PlotCallback(TrajOptProb& prob) {
                       cnts,
                       boost::ref(*prob.GetRAD()),
                       boost::ref(prob.GetVars()),
-                      _1);
+                      _2);
 }
 
 }
