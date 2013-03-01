@@ -15,3 +15,6 @@ include_directories(
 
 add_executable(quaternion_optimization quaternion_optimization.cpp)
 target_link_libraries(quaternion_optimization trajopt)
+
+add_executable(quaternion_optimization2 quaternion_optimization2.cpp)
+target_link_libraries(quaternion_optimization2 trajopt)

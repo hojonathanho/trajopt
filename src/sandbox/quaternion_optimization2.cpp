@@ -6,6 +6,8 @@
 #include "trajopt/utils.hpp"
 #include "sco/expr_op_overloads.hpp"
 #include "sco/optimizers.hpp"
+#include "sco/modeling_utils.hpp"
+#include "utils/eigen_conversions.hpp"
 using namespace OpenRAVE;
 using namespace trajopt;
 using namespace sco;
@@ -202,8 +204,6 @@ public:
   double dt_;
 };
 
-#include "sco/modeling_utils.hpp"
-#include "utils/eigen_conversions.hpp"
 class ConstAngVelConstraintND : public ConstraintFromNumDiff {
   struct ErrCalc : public VectorOfVector {
     ConstAngVelConstraintND *m_c;
@@ -235,6 +235,24 @@ public:
   Vector3d m_w_desired;
 };
 
+AffExpr linearizeCntI(const vector<double> &xin, const VarVector &vars, Constraint *cnt, int i, double eps=1e-6) {
+  vector<double> xtmp = xin;
+  AffExpr out(cnt->value(xin)[i]);
+  for (int z = 0; z < vars.size(); ++z) {
+    const Var &var = vars[z];
+    int idx = var.var_rep->index;
+    xtmp[idx] = xin[idx] + eps;
+    double y2 = cnt->value(xtmp)[i];
+    xtmp[idx] = xin[idx] - eps;
+    double y1 = cnt->value(xtmp)[i];
+    xtmp[idx] = xin[idx];
+    double dy = (y2 - y1) / (2.*eps);
+    if (abs(dy) < 1e-7) continue;
+    exprInc(out, dy*(var - xin[idx]));
+  }
+  return out;
+}
+
 class ConstAngVelConstraint : public EqConstraint {
 public:
   ConstAngVelConstraint(const DblMatrix& q, const VarArray& r, const Vector3d &w_desired, double dt) : q_(q), r_(r), dt_(dt), m_w_desired(w_desired) {}
@@ -254,11 +272,16 @@ public:
     return err;
   }
   ConvexConstraintsPtr convex(const vector<double>& x, Model* model) {
+    VarVector vars = r_.flatten();
     ConvexConstraintsPtr out(new ConvexConstraints(model));
+
     DblMatrix wvals = getW(q_, dt_);
     for (int i=0; i < wvals.rows(); ++i) {
       for (int j=0; j < wvals.cols(); ++j) {
-        out->addEqCnt((r_(i+1,j) - r_(i,j))*(1/dt_)  + wvals(i,j) - m_w_desired(j));
+        AffExpr nd_cnt = linearizeCntI(x, vars, this, i*3+j);
+        AffExpr cnt = ((r_(i+1,j) - r_(i,j))*(1/dt_) + wvals(i,j)) + m_w_desired(j);
+        cout << "nd cnt " << nd_cnt << " | cnt " << cnt << endl;
+        out->addEqCnt(nd_cnt);
       }
     }
     return out;

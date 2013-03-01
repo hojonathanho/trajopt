@@ -106,7 +106,7 @@ DynamicsProblemPtr CreateDynamicsProblem(OR::EnvironmentBasePtr env, ProblemSpec
   return prob;
 }
 
-DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plotting) {
+DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, const vector<double> *init_soln, bool plotting) {
   if (prob->getNumCosts() == 0) {
     prob->addCost(CostPtr(new ZeroCost())); // shut up
   }
@@ -125,7 +125,7 @@ DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plott
   optimizer->max_iter_ = 1000;
   //optimizer->max_merit_coeff_increases_= 10;
 
-  optimizer->initialize(prob->makeInitialSolution());
+  optimizer->initialize(init_soln == NULL ? prob->makeInitialSolution() : *init_soln);
   OptStatus status = optimizer->optimize();
 
   DynamicsOptResultPtr result(new DynamicsOptResult);
@@ -134,53 +134,75 @@ DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plott
   return result;
 }
 
-//DynamicsOptResultPtr OptimizeStepLoop(DynamicsProblemPtr prob, bool plotting) {
-//  if (prob->getNumCosts() == 0) {
-//    prob->addCost(CostPtr(new ZeroCost())); // shut up
-//  }
-//  const int total_timesteps = prob->m_timesteps;
-//
-//  DynamicsProblemPtr tmp_prob;
-//
-//  for (int t = 1; t < total_timesteps; ++t) {
-//    tmp_prob.reset(new DynamicsProblem(*prob));
-//    tmp_prob->m_timesteps = 2;
-//    tmp_prob->setUpProblem();
-//  }
-//
-//  OSGViewerPtr viewer;
-//  if (plotting) {
-//    viewer.reset(new OSGViewer(prob->m_env));
-//    viewer->Idle();
-//  }
-//
-//  vector<double> curr_x = prob->makeInitialSolution();
-//
-//  for (int t = 1; t < total_timesteps; ++t) {
-//    BasicTrustRegionSQPPtr optimizer(new BasicTrustRegionSQP(prob));
-//    optimizer->min_trust_box_size_ = 1e-7;
-//    optimizer->min_approx_improve_= 1e-7;
-//    optimizer->cnt_tolerance_ = 1e-7;
-//    optimizer->trust_box_size_ = 1;
-//    optimizer->max_iter_ = 1000;
-//
-//    optimizer->initialize(curr_x);
-//    OptStatus status = optimizer->optimize();
-//
-//    curr_x = optimizer->x();
-//    for (DynamicsObjectPtr &o : prob->m_objects) {
-//      o->setRaveState(curr_x, 1);
-//    }
-//    prob->m_env->UpdatePublishedBodies();
-//    if (viewer) {
-//      viewer->Idle();
-//    }
-//  }
-//
-//  //optimizer->max_merit_coeff_increases_= 10;
-//
-//
-//}
+DynamicsOptResultPtr OptimizeStepLoop(OR::EnvironmentBasePtr env, ProblemSpec &spec) {
+  DynamicsProblemPtr prob;
+
+  ProblemSpec tmp_spec = spec;
+  tmp_spec.timesteps = 2;
+
+  vector<double> init_soln;
+
+  while () {
+    env->Reset();
+    prob = CreateDynamicsProblem(env, tmp_spec);
+    if (init_soln.size() == 0) {
+      init_soln = prob->makeInitialSolution();
+    }
+    DynamicsOptResultPtr result = OptimizeDynamicsProblem(prob, &init_soln, true);
+
+    // set tmp_spec's state_0 and init_trajs to be the state of timestep 1 of the result of the current problem
+    for (SpecPtr &o : tmp_spec.objects) {
+      o->setState0From(result->optimizer->x(), 1);
+    }
+    init_soln = result->optimizer->x();
+  }
+
+  if (prob->getNumCosts() == 0) {
+    prob->addCost(CostPtr(new ZeroCost())); // shut up
+  }
+  const int total_timesteps = prob->m_timesteps;
+
+  DynamicsProblemPtr tmp_prob;
+
+  for (int t = 1; t < total_timesteps; ++t) {
+    tmp_prob.reset(new DynamicsProblem(*prob));
+    tmp_prob->m_timesteps = 2;
+    tmp_prob->setUpProblem();
+  }
+
+  OSGViewerPtr viewer;
+  if (plotting) {
+    viewer.reset(new OSGViewer(prob->m_env));
+    viewer->Idle();
+  }
+
+  vector<double> curr_x = prob->makeInitialSolution();
+
+  for (int t = 1; t < total_timesteps; ++t) {
+    BasicTrustRegionSQPPtr optimizer(new BasicTrustRegionSQP(prob));
+    optimizer->min_trust_box_size_ = 1e-7;
+    optimizer->min_approx_improve_= 1e-7;
+    optimizer->cnt_tolerance_ = 1e-7;
+    optimizer->trust_box_size_ = 1;
+    optimizer->max_iter_ = 1000;
+
+    optimizer->initialize(curr_x);
+    OptStatus status = optimizer->optimize();
+
+    curr_x = optimizer->x();
+    for (DynamicsObjectPtr &o : prob->m_objects) {
+      o->setRaveState(curr_x, 1);
+    }
+    prob->m_env->UpdatePublishedBodies();
+    if (viewer) {
+      viewer->Idle();
+    }
+  }
+
+  //optimizer->max_merit_coeff_increases_= 10;
+
+
+}
 
 } // namespace dynamics
 } // namespace trajopt

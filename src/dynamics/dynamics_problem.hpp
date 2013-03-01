@@ -23,6 +23,7 @@ typedef boost::shared_ptr<OptimizationBase> OptimizationBasePtr;
 struct Spec {
   virtual ~Spec() { }
   virtual OptimizationBasePtr realize(DynamicsProblem *prob) = 0;
+  virtual void setState0From(const vector<double> &x, int t) = 0;
 };
 typedef boost::shared_ptr<Spec> SpecPtr;
 
@@ -112,7 +113,7 @@ typedef boost::shared_ptr<DynamicsOptResult> DynamicsOptResultPtr;
 
 
 DynamicsProblemPtr CreateDynamicsProblem(OR::EnvironmentBasePtr env, ProblemSpec &spec);
-DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, bool plotting=false);
+DynamicsOptResultPtr OptimizeDynamicsProblem(DynamicsProblemPtr prob, const vector<double> *init_soln=NULL, bool plotting=false);
 
 
 } // namespace dynamics

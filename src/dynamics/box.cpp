@@ -55,6 +55,7 @@ void Box::fillVarNamesAndBounds(vector<string> &out_names, vector<double> &out_v
 }
 
 void Box::fillInitialSolution(vector<double> &out) {
+  assert(m_spec.traj_init.x.rows() >= getProb()->m_spec.timesteps);
   for (int t = 0; t < getProb()->m_spec.timesteps; ++t) {
     for (int i = 0; i < 3; ++i) {
       out.push_back(m_spec.traj_init.x(t,i));
@@ -99,12 +100,6 @@ int Box::setVariables(const vector<Var> &vars, int start_pos) {
       m_trajvars.torque(t,i) = vars[k++];
     }
   }
-  /*
-  cout << k - start_pos << endl;
-  cout << getProb()->m_spec.timesteps << endl;
-  cout << BoxState::Dim() << endl;
-  cout << m_ground_conts.size() << endl;
-  cout << ContactState::Dim() << endl;*/
   assert(k - start_pos == getProb()->m_spec.timesteps*BoxState::Dim());
   return k;
 }
