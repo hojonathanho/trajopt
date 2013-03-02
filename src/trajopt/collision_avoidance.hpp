@@ -10,6 +10,9 @@ namespace trajopt {
 
 typedef std::map<const OR::KinBody::Link*, int> Link2Int;
 
+class SceneStateInfo;
+typedef boost::shared_ptr<SceneStateInfo> SceneStateInfoPtr;
+
 
 struct CollisionEvaluator {
   virtual void CalcDistExpressions(const DblVec& x, vector<AffExpr>& exprs, DblVec& weights) = 0;
@@ -24,7 +27,7 @@ typedef boost::shared_ptr<CollisionEvaluator> CollisionEvaluatorPtr;
 
 struct SingleTimestepCollisionEvaluator : public CollisionEvaluator {
 public:
-  SingleTimestepCollisionEvaluator(RobotAndDOFPtr rad, const VarVector& vars);
+  SingleTimestepCollisionEvaluator(RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
   /**
   @brief linearize all contact distances in terms of robot dofs
   
@@ -44,6 +47,7 @@ public:
   OR::EnvironmentBasePtr m_env;
   CollisionCheckerPtr m_cc;
   RobotAndDOFPtr m_rad;
+  SceneStateInfoPtr m_scene_state;
   VarVector m_vars;
   Link2Int m_link2ind;
   vector<OR::KinBody::LinkPtr> m_links;
@@ -69,7 +73,7 @@ public:
 
 struct CastCollisionEvaluator : public CollisionEvaluator {
 public:
-  CastCollisionEvaluator(RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1);
+  CastCollisionEvaluator(RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
   void CalcDistExpressions(const DblVec& x, vector<AffExpr>& exprs, DblVec& weights); // appends to this vector
   void CalcDists(const DblVec& x, DblVec& exprs, DblVec& weights); // appends to this vector
   void CalcCollisions(const DblVec& x, vector<Collision>& collisions);
@@ -78,6 +82,7 @@ public:
   OR::EnvironmentBasePtr m_env;
   CollisionCheckerPtr m_cc;
   RobotAndDOFPtr m_rad;
+  SceneStateInfoPtr m_scene_state;
   VarVector m_vars0;
   VarVector m_vars1;
   typedef std::map<const OR::KinBody::Link*, int> Link2Int;
@@ -90,9 +95,9 @@ public:
 class CollisionCost : public Cost, public Plotter {
 public:
   /* constructor for single timestep */
-  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars);
+  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
   /* constructor for cast cost */
-  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1);
+  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
   virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model);
   virtual double value(const vector<double>&);
   virtual void Plot(const DblVec& x, OR::EnvironmentBase&, std::vector<OR::GraphHandlePtr>& handles);

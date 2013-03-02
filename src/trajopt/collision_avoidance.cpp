@@ -8,6 +8,7 @@
 #include "utils/eigen_conversions.hpp"
 #include "sco/modeling_utils.hpp"
 #include "utils/stl_to_string.hpp"
+#include "trajopt/problem_description.hpp"
 using namespace OpenRAVE;
 using namespace sco;
 using namespace util;
@@ -15,6 +16,26 @@ using namespace std;
 
 namespace trajopt {
 
+
+class SceneStateSetter {
+public:
+  SceneStateSetter(OR::EnvironmentBasePtr env, SceneStateInfoPtr new_state) {
+    BOOST_FOREACH(ObjectStateInfoPtr& o, new_state->obj_state_infos) {
+      KinBodyPtr body = env->GetKinBody(o->name);
+      m_savers.push_back(new KinBody::KinBodyStateSaver(body));
+      body->SetTransform(toRaveTransform(o->wxyz, o->xyz));
+    }
+  }
+  ~SceneStateSetter() {
+    BOOST_FOREACH(KinBody::KinBodyStateSaver* s, m_savers) {
+      delete s;
+    }
+  }
+
+private:
+  vector<KinBody::KinBodyStateSaver*> m_savers;
+};
+typedef boost::shared_ptr<SceneStateSetter> SceneStateSetterPtr;
 
 void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& m_link2ind,
     DblVec& dists, DblVec& weights) {
@@ -32,11 +53,13 @@ void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& 
   }
 }
 
-void CollisionsToDistanceExpressions(const vector<Collision>& collisions, RobotAndDOF& rad,
+void CollisionsToDistanceExpressions(const vector<Collision>& collisions, RobotAndDOF& rad, SceneStateInfoPtr scene_state,
     const Link2Int& m_link2ind, const VarVector& m_vars, const DblVec& dofvals, vector<AffExpr>& exprs, DblVec& weights) {
 
   exprs.reserve(exprs.size() + collisions.size());
   weights.reserve(weights.size() + collisions.size());
+  SceneStateSetterPtr state_setter;
+  if (scene_state) state_setter.reset(new SceneStateSetter(rad.GetRobot()->GetEnv(), scene_state));
   rad.SetDOFValues(dofvals); // since we'll be calculating jacobians
   BOOST_FOREACH(const Collision& col, collisions) {
     AffExpr dist(col.distance);
@@ -75,10 +98,11 @@ void CollisionEvaluator::GetCollisionsCached(const DblVec& x, vector<Collision>&
   }
 }
 
-SingleTimestepCollisionEvaluator::SingleTimestepCollisionEvaluator(RobotAndDOFPtr rad, const VarVector& vars) :
+SingleTimestepCollisionEvaluator::SingleTimestepCollisionEvaluator(RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
   m_env(rad->GetRobot()->GetEnv()),
   m_cc(CollisionChecker::GetOrCreate(*m_env)),
   m_rad(rad),
+  m_scene_state(scene_state),
   m_vars(vars),
   m_link2ind(),
   m_links() {
@@ -95,6 +119,8 @@ SingleTimestepCollisionEvaluator::SingleTimestepCollisionEvaluator(RobotAndDOFPt
 
 void SingleTimestepCollisionEvaluator::CalcCollisions(const DblVec& x, vector<Collision>& collisions) {
   DblVec dofvals = getDblVec(x, m_vars);
+  SceneStateSetterPtr state_setter;
+  if (m_scene_state) state_setter.reset(new SceneStateSetter(m_env, m_scene_state));
   m_rad->SetDOFValues(dofvals);
   m_cc->LinksVsAll(m_links, collisions);
 }
@@ -110,15 +136,16 @@ void SingleTimestepCollisionEvaluator::CalcDistExpressions(const DblVec& x, vect
   vector<Collision> collisions;
   GetCollisionsCached(x, collisions);
   DblVec dofvals = getDblVec(x, m_vars);
-  CollisionsToDistanceExpressions(collisions, *m_rad, m_link2ind, m_vars, dofvals, exprs, weights);
+  CollisionsToDistanceExpressions(collisions, *m_rad, m_scene_state, m_link2ind, m_vars, dofvals, exprs, weights);
 }
 
 ////////////////////////////////////////
 
-CastCollisionEvaluator::CastCollisionEvaluator(RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1) :
+CastCollisionEvaluator::CastCollisionEvaluator(RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
   m_env(rad->GetRobot()->GetEnv()),
   m_cc(CollisionChecker::GetOrCreate(*m_env)),
   m_rad(rad),
+  m_scene_state(scene_state),
   m_vars0(vars0),
   m_vars1(vars1),
   m_link2ind(),
@@ -136,6 +163,8 @@ CastCollisionEvaluator::CastCollisionEvaluator(RobotAndDOFPtr rad, const VarVect
 void CastCollisionEvaluator::CalcCollisions(const DblVec& x, vector<Collision>& collisions) {
   DblVec dofvals0 = getDblVec(x, m_vars0);
   DblVec dofvals1 = getDblVec(x, m_vars1);
+  SceneStateSetterPtr state_setter;
+  if (m_scene_state) state_setter.reset(new SceneStateSetter(m_env, m_scene_state)); // TODO: use casts for the scene objects too?
   m_rad->SetDOFValues(dofvals0);
   m_cc->CastVsAll(*m_rad, m_links, dofvals0, dofvals1, collisions);
 }
@@ -143,9 +172,9 @@ void CastCollisionEvaluator::CalcDistExpressions(const DblVec& x, vector<AffExpr
   vector<Collision> collisions;
   GetCollisionsCached(x, collisions);
   DblVec dofvals = getDblVec(x, m_vars0);
-  CollisionsToDistanceExpressions(collisions, *m_rad, m_link2ind, m_vars0, dofvals, exprs, weights);
+  CollisionsToDistanceExpressions(collisions, *m_rad, m_scene_state, m_link2ind, m_vars0, dofvals, exprs, weights);
   dofvals = getDblVec(x, m_vars1);
-  CollisionsToDistanceExpressions(collisions, *m_rad, m_link2ind, m_vars1, dofvals, exprs, weights);
+  CollisionsToDistanceExpressions(collisions, *m_rad, m_scene_state, m_link2ind, m_vars1, dofvals, exprs, weights);
 }
 void CastCollisionEvaluator::CalcDists(const DblVec& x, DblVec& exprs, DblVec& weights) {
   vector<Collision> collisions;
@@ -173,14 +202,14 @@ void PlotCollisions(const std::vector<Collision>& collisions, OR::EnvironmentBas
   }
 }
 
-CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars) :
+CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
     Cost("collision"),
-    m_calc(new SingleTimestepCollisionEvaluator(rad, vars)), m_dist_pen(dist_pen), m_coeff(coeff)
+    m_calc(new SingleTimestepCollisionEvaluator(rad, scene_state, vars)), m_dist_pen(dist_pen), m_coeff(coeff)
 {}
 
-CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1) :
+CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
     Cost("cast_collision"),
-    m_calc(new CastCollisionEvaluator(rad, vars0, vars1)), m_dist_pen(dist_pen), m_coeff(coeff)
+    m_calc(new CastCollisionEvaluator(rad, scene_state, vars0, vars1)), m_dist_pen(dist_pen), m_coeff(coeff)
 {}
 
 

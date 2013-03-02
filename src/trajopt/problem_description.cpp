@@ -306,6 +306,7 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
     ci->hatch(*prob);
   }
 
+  prob->SetSceneStates(pci.scene_state_infos);
   prob->SetInitTraj(pci.init_info.data);
 
   return prob;
@@ -478,7 +479,7 @@ void CollisionCostInfo::fromJson(const Value& v) {
 }
 void CollisionCostInfo::hatch(TrajOptProb& prob) {
   for (int i=0; i < prob.GetNumSteps(); ++i) {
-    prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetVarRow(i))));
+    prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i))));
     prob.getCosts().back()->setName( (boost::format("%s_%i")%name%i).str() );
   }
   CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(*prob.GetEnv());
@@ -510,7 +511,7 @@ void ContinuousCollisionCostInfo::fromJson(const Value& v) {
 }
 void ContinuousCollisionCostInfo::hatch(TrajOptProb& prob) {
   for (int i=first_step; i < last_step; ++i) {
-    prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetVarRow(i), prob.GetVarRow(i+1))));
+    prob.addCost(CostPtr(new CollisionCost(dist_pen[i], coeffs[i], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i), prob.GetVarRow(i+1))));
     prob.getCosts().back()->setName( (boost::format("%s_%i")%name%i).str() );
   }
   CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(*prob.GetEnv());
@@ -551,6 +552,10 @@ void ObjectStateInfo::fromJson(const Json::Value& v) {
   childFromJson(v, xyz, "xyz");
   childFromJson(v, wxyz, "wxyz");
 }
+void fromJson(const Json::Value& v, ObjectStateInfoPtr& p) {
+  p.reset(new ObjectStateInfo);
+  p->fromJson(v);
+}
 
 void SceneStateInfo::fromJson(const Json::Value& v) {
   childFromJson(v, timestep, "timestep");
@@ -559,6 +564,10 @@ void SceneStateInfo::fromJson(const Json::Value& v) {
   }
   FAIL_IF_FALSE(v.isMember("obj_states"));
   fromJsonArray(v["obj_states"], obj_state_infos);
+}
+void fromJson(const Json::Value& v, SceneStateInfoPtr& p) {
+  p.reset(new SceneStateInfo);
+  p->fromJson(v);
 }
 
 
