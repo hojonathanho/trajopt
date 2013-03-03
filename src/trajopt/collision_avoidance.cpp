@@ -17,25 +17,19 @@ using namespace std;
 namespace trajopt {
 
 
-class SceneStateSetter {
-public:
-  SceneStateSetter(OR::EnvironmentBasePtr env, SceneStateInfoPtr new_state) {
-    BOOST_FOREACH(ObjectStateInfoPtr& o, new_state->obj_state_infos) {
-      KinBodyPtr body = env->GetKinBody(o->name);
-      m_savers.push_back(new KinBody::KinBodyStateSaver(body));
-      body->SetTransform(toRaveTransform(o->wxyz, o->xyz));
-    }
+SceneStateSetter::SceneStateSetter(OR::EnvironmentBasePtr env, SceneStateInfoPtr new_state) {
+  BOOST_FOREACH(ObjectStateInfoPtr& o, new_state->obj_state_infos) {
+    KinBodyPtr body = env->GetKinBody(o->name);
+    m_savers.push_back(new KinBody::KinBodyStateSaver(body));
+    body->SetTransform(toRaveTransform(o->wxyz, o->xyz));
   }
-  ~SceneStateSetter() {
-    BOOST_FOREACH(KinBody::KinBodyStateSaver* s, m_savers) {
-      delete s;
-    }
+}
+SceneStateSetter::~SceneStateSetter() {
+  BOOST_FOREACH(KinBody::KinBodyStateSaver* s, m_savers) {
+    delete s;
   }
+}
 
-private:
-  vector<KinBody::KinBodyStateSaver*> m_savers;
-};
-typedef boost::shared_ptr<SceneStateSetter> SceneStateSetterPtr;
 
 void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& m_link2ind,
     DblVec& dists, DblVec& weights) {

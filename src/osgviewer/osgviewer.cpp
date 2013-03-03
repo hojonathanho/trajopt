@@ -582,6 +582,23 @@ GraphHandlePtr OSGViewer::PlotKinBody(KinBodyPtr body) {
   return GraphHandlePtr(handle);
 }
 
+GraphHandlePtr OSGViewer::PlotKinBodies(const vector<KinBodyPtr>& bodies) {
+  UpdateSceneData();
+  osg::Group* group = new osg::Group;
+  BOOST_FOREACH(const KinBodyPtr& body, bodies) {
+    KinBodyGroup* orig = GetOsgGroup(*body);
+    /* Note: we could easily plot a kinbody that's not part of the environment, but
+      there would be a problem if you plot something and then add it later
+     */
+    OPENRAVE_ASSERT_FORMAT0(orig != NULL, "kinbody not part of scene graph", ORE_Assert);
+    orig->update();
+    osg::Group* copy = new osg::Group(*orig, CopyOp(CopyOp::DEEP_COPY_NODES | CopyOp::DEEP_COPY_STATESETS | CopyOp::DEEP_COPY_STATEATTRIBUTES));
+    group->addChild(copy);
+  }
+  OsgGraphHandle* handle = new OsgGraphHandle(group, m_root.get());
+  return GraphHandlePtr(handle);
+}
+
 GraphHandlePtr OSGViewer::PlotLink(KinBody::LinkPtr link) {
   KinBodyPtr body = link->GetParent();
   KinBodyGroup* orig = GetOsgGroup(*body);

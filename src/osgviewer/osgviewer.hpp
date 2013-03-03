@@ -48,6 +48,7 @@ public:
 
   /** copy current state of kinbody or link */
   OpenRAVE::GraphHandlePtr PlotKinBody(const OpenRAVE::KinBodyPtr);
+  OpenRAVE::GraphHandlePtr PlotKinBodies(const std::vector<OpenRAVE::KinBodyPtr>&);
   OpenRAVE::GraphHandlePtr PlotLink(const OpenRAVE::KinBody::LinkPtr);
 
   struct EventHandler : public osgGA::TrackballManipulator {

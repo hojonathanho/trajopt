@@ -13,6 +13,16 @@ typedef std::map<const OR::KinBody::Link*, int> Link2Int;
 class SceneStateInfo;
 typedef boost::shared_ptr<SceneStateInfo> SceneStateInfoPtr;
 
+class SceneStateSetter {
+public:
+  SceneStateSetter(OR::EnvironmentBasePtr env, SceneStateInfoPtr new_state);
+  ~SceneStateSetter();
+
+private:
+  vector<KinBody::KinBodyStateSaver*> m_savers;
+};
+typedef boost::shared_ptr<SceneStateSetter> SceneStateSetterPtr;
+
 
 struct CollisionEvaluator {
   virtual void CalcDistExpressions(const DblVec& x, vector<AffExpr>& exprs, DblVec& weights) = 0;

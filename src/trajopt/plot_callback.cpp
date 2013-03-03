@@ -4,27 +4,41 @@
 #include "utils/eigen_conversions.hpp"
 #include <boost/foreach.hpp>
 #include "trajopt/problem_description.hpp"
+#include "trajopt/collision_avoidance.hpp"
 using namespace OpenRAVE;
 using namespace util;
 namespace trajopt {
 
 static int gTrajPlayPos;
 static vector<GraphHandlePtr> gTrajHandles;
+static vector<GraphHandlePtr> gSceneTrajHandles;
 
 static const float TRAJ_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_INACTIVE_TRANSPARENCY = .1;
 
-static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const TrajArray& x, vector<GraphHandlePtr>& handles) {
+static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<GraphHandlePtr>& handles, vector<GraphHandlePtr>& scene_handles) {
   RobotBase::RobotStateSaver saver = rad.Save();
   for (int i=0; i < x.rows(); ++i) {
     rad.SetDOFValues(toDblVec(x.row(i)));
     handles.push_back(viewer.PlotKinBody(rad.GetRobot()));
     SetTransparency(handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
+
+    SceneStateSetterPtr state_setter;
+    if (!scene_states.empty()) {
+      assert(scene_states.size() == x.rows());
+      state_setter.reset(new SceneStateSetter(rad.GetRobot()->GetEnv(), scene_states[i]));
+      vector<KinBodyPtr> kinbodies_to_plot;
+      BOOST_FOREACH(ObjectStateInfoPtr& o, scene_states[i]->obj_state_infos) {
+        kinbodies_to_plot.push_back(rad.GetRobot()->GetEnv()->GetKinBody(o->name));
+      }
+      scene_handles.push_back(viewer.PlotKinBodies(kinbodies_to_plot));
+      SetTransparency(scene_handles.back(), TRAJ_DEFAULT_TRANSPARENCY/2.);
+    }
   }
 }
 
-static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<ConstraintPtr>& cnts, RobotAndDOF& rad, const VarArray& vars, const DblVec& x) {
+static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<ConstraintPtr>& cnts, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const VarArray& vars, const DblVec& x) {
   vector<GraphHandlePtr> handles;
   BOOST_FOREACH(CostPtr& cost, costs) {
     if (Plotter* plotter = dynamic_cast<Plotter*>(cost.get())) {
@@ -36,13 +50,13 @@ static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<Constrai
       plotter->Plot(x, *rad.GetRobot()->GetEnv(), handles);
     }
   }
-  gTrajHandles.clear();
+  gTrajHandles.clear(); gSceneTrajHandles.clear();
   gTrajPlayPos = -1;
   TrajArray traj = getTraj(x, vars);
-  PlotTraj(viewer, rad, traj, gTrajHandles);
+  PlotTraj(viewer, rad, scene_states, traj, gTrajHandles, gSceneTrajHandles);
   viewer.Idle();
   rad.SetDOFValues(toDblVec(traj.row(traj.rows()-1)));
-  gTrajHandles.clear();
+  gTrajHandles.clear(); gSceneTrajHandles.clear();
 }
 
 static void TrajPlayCallback(char c) {
@@ -72,6 +86,9 @@ static void TrajPlayCallback(char c) {
       trans = gTrajPlayPos == i ? TRAJ_ACTIVE_TRANSPARENCY : TRAJ_INACTIVE_TRANSPARENCY;
     }
     SetTransparency(gTrajHandles[i], trans);
+    if (!gSceneTrajHandles.empty()) {
+      SetTransparency(gSceneTrajHandles[i], trans/2.);
+    }
   }
 }
 
@@ -91,6 +108,7 @@ Optimizer::Callback PlotCallback(TrajOptProb& prob) {
                       boost::ref(prob.getCosts()),
                       cnts,
                       boost::ref(*prob.GetRAD()),
+                      boost::ref(prob.GetSceneStates()),
                       boost::ref(prob.GetVars()),
                       _2);
 }
