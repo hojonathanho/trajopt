@@ -28,3 +28,6 @@ bigdata/*
 !bigdata/*.py
 sphinx_build
 dox_build
+.*.swo
+.*.swm
+.*.swp

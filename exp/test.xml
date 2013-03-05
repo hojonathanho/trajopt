@@ -1,0 +1,34 @@
+<!-- Project room filled with tables and an object -->
+<!-- tables will be ikeatable.kinbody.xml -->
+<!-- object will be TibitsBox.kinbody.xml -->
+<!-- Total tables in the room : 6 -->
+<!-- Total object : 1 -->
+<!-- Overall Size(m): 8 x 4 -->
+<Environment>
+  <bkgndcolor>1 1 1</bkgndcolor>
+  <camtrans>1.327509 -0.765386 1.225026</camtrans>
+  <camrotationaxis>-0.916210 -0.318647 0.242947 138.160983</camrotationaxis>
+
+  <KinBody name="mug-shelf" file="data/mug2.kinbody.xml">
+    <Translation>0 1.1 0.79</Translation>
+    <quat>0.75 0 0 0.5</quat>
+  </KinBody>
+  <KinBody name="mug-shelf1" file="data/mug2.kinbody.xml">
+    <Translation>0.106 1.1 0.81</Translation>
+    <quat>0.75 0 0 0.5</quat>
+  </KinBody>
+  <KinBody name="mug-shelf2" file="data/mug2.kinbody.xml">
+    <Translation>-0.106 1.1 0.79</Translation>
+    <quat>0.75 0 0 0.5</quat>
+  </KinBody>
+
+  <Robot name="PR2" file="robots/pr2-beta-static.zae">
+	  <translation>0 0.13 0</translation>
+    <quat> 0.7 0 0 0.73 </quat>
+  </Robot>
+  <KinBody name="bookshelf" file= "data/ikeashelf.kinbody.xml">
+    <Translation>0 1.2 0</Translation>
+    <quat>-0.75 0 0 0.65</quat>
+  </KinBody>
+</Environment>
+

@@ -551,6 +551,7 @@ void BulletCollisionChecker::SetLinkIndices() {
 void BulletCollisionChecker::UpdateBulletFromRave() {
   vector<OR::KinBodyPtr> bodies, addedBodies;
   m_env->GetBodies(bodies);
+
   if (bodies.size() != m_prevbodies.size() || !std::equal(bodies.begin(), bodies.end(), m_prevbodies.begin())) {
     RAVELOG_DEBUG("need to add and remove stuff\n");
     AddAndRemoveBodies(bodies, m_prevbodies, addedBodies);

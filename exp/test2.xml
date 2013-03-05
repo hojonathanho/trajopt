@@ -1,0 +1,99 @@
+<Environment>
+  <bkgndcolor>1 1 1</bkgndcolor>
+  <camtrans>-0.147789 1.713242 1.438055</camtrans>
+  <camrotationaxis>-0.087192 0.811791 -0.577401 176.696339</camrotationaxis>
+
+  <KinBody name="c1">
+    <Translation>1.23 0.465 0.845</Translation>
+    <quat>0.75 0 0 0.5</quat>
+    <Body name="cylinder">
+      <Geom type="cylinder">
+        <translation>-0.7 0.25 0</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.015</radius>
+        <height>0.3</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+    </Body>
+  </KinBody>
+  <KinBody name="c2">
+    <Translation>1.365 1.06 0.845</Translation>
+    <quat>0.75 0 0 0.5</quat>
+    <Body name="cylinder">
+      <Geom type="cylinder">
+        <translation>-0.7 0.25 0</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.015</radius>
+        <height>0.3</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+    </Body>
+  </KinBody>
+
+  <Robot name="PR2" file="robots/pr2-beta-static.zae">
+	  <translation>0.32 0.91 0.10</translation>
+    <quat> 0.982 0 0 -0.185 </quat>
+  </Robot>
+  <KinBody name="upper-obstacle1">
+    <Translation>1.24 0.32 0.90</Translation>
+    <quat>0.75 0 0 0.5</quat>
+    <Body name="obstacle1">
+      <Geom type="box">
+        <extents>.7515 0.205 0.02</extents>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+        <rotationaxis>1 0 0 90</rotationaxis>
+      </Geom>
+    </Body>
+  </KinBody>
+  <KinBody name="upper-obstacle2">
+    <Translation>0.88 0.44 1</Translation>
+    <quat>0.75 0 0 0.5</quat>
+    <Body name="obstacle2">
+      <Geom type="box">
+        <extents>.7515 0.405 0.02</extents>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+    </Body>
+  </KinBody>
+
+  <KinBody name="table">
+    <Translation>0.89 0.44 0.666</Translation>
+    <quat>0.75 0 0 0.5</quat>
+    <Body name="table">
+      <Geom type="box">
+        <extents>.7515 0.405 0.02</extents>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+      <Geom type="cylinder">
+        <translation>0.7 0.25 -0.25</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.02</radius>
+        <height>0.5</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+      <Geom type="cylinder">
+        <translation>-0.7 0.25 -0.25</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.02</radius>
+        <height>0.5</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+      <Geom type="cylinder">
+        <translation>0.7 -0.25 -0.25</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.02</radius>
+        <height>0.5</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+      <Geom type="cylinder">
+        <translation>-0.7 -0.25 -0.25</translation>
+        <rotationaxis>1 0 0 -90</rotationaxis>
+        <radius>0.02</radius>
+        <height>0.5</height>
+        <diffuseColor>0.9 0.9 0.9</diffuseColor>
+      </Geom>
+    </Body>
+  </KinBody>
+
+</Environment>
+

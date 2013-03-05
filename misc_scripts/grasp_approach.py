@@ -62,7 +62,7 @@ if __name__ == "__main__":
     ENV_FILE = "data/wamtest1.env.xml"
     MANIP_NAME = "arm"
     LINK_NAME = "wam7"
-    INTERACTIVE = True
+    INTERACTIVE = False
     ##################
     
     
