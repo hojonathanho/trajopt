@@ -11,13 +11,23 @@ env.Load("../data/table.xml")
 
 env.SetViewer('qtcoin')
 
-bullet_env = bulletsimpy.LoadFromRave(env, 'table')
+dyn_obj_names = ['table']
+
+bullet_env = bulletsimpy.LoadFromRave(env, dyn_obj_names)
 bullet_env.SetGravity([0, 0, -9.8])
 
 # objects to record
 rec_obj_names = ['table']
 rec_objs = [bullet_env.GetObjectByName(name) for name in rec_obj_names]
 
-rec = physics.record_sim(bullet_env, rec_objs, n_timesteps=20, update_rave_env=True, pause_per_iter=True)
+# simulate for a few steps first to stabilize
+for i in range(20):
+  bullet_env.Step(0.01, 100, 0.01)
+for o in dyn_objs:
+  env.GetKinBody(o.GetName()).SetTransform(o.GetTransform())
+env.UpdatePublishedBodies()
+
+
+rec = physics.record_sim(bullet_env, rec_objs, n_timesteps=50, update_rave_env=True, pause_per_iter=True)
 pprint(rec)
 

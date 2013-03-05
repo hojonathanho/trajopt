@@ -2,6 +2,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--interactive", action="store_true")
 parser.add_argument("--position_only", action="store_true")
+parser.add_argument("--moving_scene", action="store_true")
 args = parser.parse_args()
 
 import openravepy as rave
@@ -17,21 +18,17 @@ env.StopSimulation()
 env.Load("robots/pr2-beta-static.zae")
 env.Load("../data/table.xml")
 
-bullet_env = bulletsimpy.LoadFromRave(env, 'table')
-bullet_env.SetGravity([0, 0, -9.8])
-
-dyn_obj_names = []
-dyn_objs = [bullet_env.GetObjectByName(name) for name in dyn_obj_names]
-
-# simulate for a few steps first to stabilize
-for i in range(20):
-  bullet_env.Step(0.01, 100, 0.01)
-for o in dyn_objs:
-  env.GetKinBody(o.GetName()).SetTransform(o.GetTransform())
-env.UpdatePublishedBodies()
-
+#bullet_env = bulletsimpy.LoadFromRave(env, 'table')
+#bullet_env.SetGravity([0, 0, -9.8])
+#
+#dyn_obj_names = []
+#dyn_objs = [bullet_env.GetObjectByName(name) for name in dyn_obj_names]
 
 trajoptpy.SetInteractive(args.interactive) # pause every iteration, until you press 'p'. Press escape to disable further plotting
+if args.interactive and args.moving_scene:
+  viewer = trajoptpy.GetViewer(env)
+  viewer.Step()
+  viewer.SetKinBodyTransparency(env.GetKinBody('table'), 0.1)
 
 robot = env.GetRobots()[0]
 joint_start = [-1.832, -0.332, -1.011, -1.437, -1.1  , -2.106,  3.074]
@@ -84,18 +81,6 @@ request = {
   }
   # END pose_constraint
   ],
-  "scene_states": [
-  { "timestep": 0, "obj_states": [{"name": "table", "xyz": [0, 0, 0.00], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 1, "obj_states": [{"name": "table", "xyz": [0, 0, 0.01], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 2, "obj_states": [{"name": "table", "xyz": [0, 0, 0.03], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 3, "obj_states": [{"name": "table", "xyz": [0, 0, 0.04], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 4, "obj_states": [{"name": "table", "xyz": [0, 0, 0.05], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 5, "obj_states": [{"name": "table", "xyz": [0, 0, 0.06], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 6, "obj_states": [{"name": "table", "xyz": [0, 0, 0.07], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 7, "obj_states": [{"name": "table", "xyz": [0, 0, 0.08], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 8, "obj_states": [{"name": "table", "xyz": [0, 0, 0.09], "wxyz": [1, 0, 0, 0]}] },
-  { "timestep": 9, "obj_states": [{"name": "table", "xyz": [0, 0, 0.10], "wxyz": [1, 0, 0, 0]}] },
-  ],
   # BEGIN init
   "init_info" : {
       "type" : "straight_line", # straight line in joint space.
@@ -103,6 +88,20 @@ request = {
   }
   # END init
 }
+if args.moving_scene:
+  request["scene_states"] = [
+    { "timestep": 0, "obj_states": [{"name": "table", "xyz": [0, 0.01*5, 0.00-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 1, "obj_states": [{"name": "table", "xyz": [0, 0.02*5, 0.01-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 2, "obj_states": [{"name": "table", "xyz": [0, 0.03*5, 0.03-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 3, "obj_states": [{"name": "table", "xyz": [0, 0.04*5, 0.04-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 4, "obj_states": [{"name": "table", "xyz": [0, 0.05*5, 0.05-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 5, "obj_states": [{"name": "table", "xyz": [0, 0.06*5, 0.06-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 6, "obj_states": [{"name": "table", "xyz": [0, 0.07*5, 0.07-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 7, "obj_states": [{"name": "table", "xyz": [0, 0.08*5, 0.08-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 8, "obj_states": [{"name": "table", "xyz": [0, 0.09*5, 0.09-0.1], "wxyz": [1, 0, 0, 0]}] },
+    { "timestep": 9, "obj_states": [{"name": "table", "xyz": [0, 0.10*5, 0.10-0.1], "wxyz": [1, 0, 0, 0]}] },
+  ]
+
 s = json.dumps(request) # convert dictionary into json-formatted string
 prob = trajoptpy.ConstructProblem(s, env) # create object that stores optimization problem
 result = trajoptpy.OptimizeProblem(prob) # do optimization

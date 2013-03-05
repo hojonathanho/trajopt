@@ -16,6 +16,7 @@ static vector<GraphHandlePtr> gSceneTrajHandles;
 static const float TRAJ_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_INACTIVE_TRANSPARENCY = .1;
+static const float TRAJ_SCENE_TRANSPARENCY_RATIO = .5;
 
 static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<GraphHandlePtr>& handles, vector<GraphHandlePtr>& scene_handles) {
   RobotBase::RobotStateSaver saver = rad.Save();
@@ -24,16 +25,15 @@ static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStat
     handles.push_back(viewer.PlotKinBody(rad.GetRobot()));
     SetTransparency(handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
 
-    SceneStateSetterPtr state_setter;
     if (!scene_states.empty()) {
       assert(scene_states.size() == x.rows());
-      state_setter.reset(new SceneStateSetter(rad.GetRobot()->GetEnv(), scene_states[i]));
+      SceneStateSetter sss(rad.GetRobot()->GetEnv(), scene_states[i]);
       vector<KinBodyPtr> kinbodies_to_plot;
       BOOST_FOREACH(ObjectStateInfoPtr& o, scene_states[i]->obj_state_infos) {
         kinbodies_to_plot.push_back(rad.GetRobot()->GetEnv()->GetKinBody(o->name));
       }
       scene_handles.push_back(viewer.PlotKinBodies(kinbodies_to_plot));
-      SetTransparency(scene_handles.back(), TRAJ_DEFAULT_TRANSPARENCY/2.);
+      SetTransparency(scene_handles.back(), TRAJ_DEFAULT_TRANSPARENCY*TRAJ_SCENE_TRANSPARENCY_RATIO);
     }
   }
 }
@@ -87,7 +87,7 @@ static void TrajPlayCallback(char c) {
     }
     SetTransparency(gTrajHandles[i], trans);
     if (!gSceneTrajHandles.empty()) {
-      SetTransparency(gSceneTrajHandles[i], trans/2.);
+      SetTransparency(gSceneTrajHandles[i], trans*TRAJ_SCENE_TRANSPARENCY_RATIO);
     }
   }
 }

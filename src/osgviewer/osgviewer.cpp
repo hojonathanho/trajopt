@@ -508,6 +508,16 @@ void SetTransparency(GraphHandlePtr handle, float alpha) {
   }
 }
 
+void OSGViewer::SetKinBodyTransparency(KinBodyPtr kinbody, float alpha) {
+  KinBodyGroup* group = GetOsgGroup(*kinbody);
+  if (group) {
+    SetTransparencyVisitor visitor(alpha);
+    group->accept(visitor);
+  } else {
+    RAVELOG_ERROR("trying to set transparency for %s, but can't find osg data", kinbody->GetName().c_str());
+  }
+}
+
 void OSGViewer::SetAllTransparency(float alpha) {
   SetTransparencyVisitor visitor(alpha);
   m_root->accept(visitor);

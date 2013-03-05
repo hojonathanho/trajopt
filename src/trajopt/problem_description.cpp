@@ -299,6 +299,8 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
     }
   }
 
+  prob->SetSceneStates(pci.scene_state_infos);
+
   BOOST_FOREACH(const CostInfoPtr& ci, pci.cost_infos) {
     ci->hatch(*prob);
   }
@@ -306,7 +308,6 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
     ci->hatch(*prob);
   }
 
-  prob->SetSceneStates(pci.scene_state_infos);
   prob->SetInitTraj(pci.init_info.data);
 
   return prob;

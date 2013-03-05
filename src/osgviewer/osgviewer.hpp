@@ -41,6 +41,7 @@ public:
   OpenRAVE::GraphHandlePtr  drawlinestrip(const float *ppoints, int numPoints, int stride, float fwidth, const RaveVectorf &color);
   OpenRAVE::GraphHandlePtr  _drawlines(osg::PrimitiveSet::Mode mode, const float *ppoints, int numPoints, int stride, float fwidth, const RaveVectorf &color);
 
+  void SetKinBodyTransparency(OpenRAVE::KinBodyPtr kinbody, float alpha);
   void SetAllTransparency(float alpha);
 
   OpenRAVE::GraphHandlePtr PlotAxes(const OpenRAVE::Transform& T, float size);

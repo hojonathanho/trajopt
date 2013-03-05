@@ -309,6 +309,9 @@ public:
   void SetAllTransparency(float a) {
     m_viewer->SetAllTransparency(a);
   }
+  void SetKinBodyTransparency(py::object py_kb, float a) {
+    m_viewer->SetKinBodyTransparency(GetCppKinBody(py_kb, m_viewer->GetEnv()), a);
+  }
   void Idle() {
     assert(!!m_viewer);
     m_viewer->Idle();
@@ -368,6 +371,7 @@ BOOST_PYTHON_MODULE(ctrajoptpy) {
   py::class_< PyOSGViewer >("OSGViewer", py::no_init)
      .def("Step", &PyOSGViewer::Step)
      .def("PlotKinBody", &PyOSGViewer::PlotKinBody)
+     .def("SetKinBodyTransparency", &PyOSGViewer::SetKinBodyTransparency)
      .def("SetAllTransparency", &PyOSGViewer::SetAllTransparency)
      .def("Idle", &PyOSGViewer::Idle)
     ;
