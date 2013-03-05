@@ -44,3 +44,4 @@ def record_sim_with_traj(prob, robot_name, robot_traj, bullet_env, bullet_rec_ob
     bullet_robot.UpdateFromRave()
 
   return record_simulation(bullet_env, bullet_rec_objs, n_timesteps, prestep_fn=prestep, **kwargs)
+

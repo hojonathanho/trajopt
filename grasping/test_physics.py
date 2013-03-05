@@ -16,6 +16,8 @@ dyn_obj_names = ['table']
 bullet_env = bulletsimpy.LoadFromRave(env, dyn_obj_names)
 bullet_env.SetGravity([0, 0, -9.8])
 
+dyn_objs = [bullet_env.GetObjectByName(name) for name in dyn_obj_names]
+
 # objects to record
 rec_obj_names = ['table']
 rec_objs = [bullet_env.GetObjectByName(name) for name in rec_obj_names]
