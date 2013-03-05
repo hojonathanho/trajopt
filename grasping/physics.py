@@ -1,6 +1,8 @@
 import openravepy as rave
-#import trajoptpy
-#import bulletsimpy
+import numpy as np
+import trajoptpy
+import trajoptpy.math_utils as mu
+import bulletsimpy
 
 def get_bulletobj_state(bullet_obj):
   posevec = rave.poseFromMatrix(bullet_obj.GetTransform())
@@ -29,19 +31,32 @@ def record_sim(bullet_env, bullet_rec_objs, n_timesteps, dt=0.01, max_substeps=1
 
   return out
 
-def record_sim_with_traj(prob, robot_name, robot_traj, bullet_env, bullet_rec_objs, n_timesteps, **kwargs):
-  assert n_timesteps == len(robot_traj)
-  #assert rave.RaveGetEnvironmentId(bullet_env.GetRaveEnv()) == rave.RaveGetEnvironmentId(robot.GetEnv())
-
+def record_sim_with_traj(prob, robot_name, traj, traj_total_time, bullet_env, bullet_rec_objs, dt=0.01, **kwargs):
   rave_env = bullet_env.GetRaveEnv()
   robot, bullet_robot = rave_env.GetRobot(robot_name), bullet_env.GetObjectByName(robot_name)
-  assert robot.IsKinematic() # if not, the prestep and record_sim could clash
+  assert bullet_robot.IsKinematic() # if not, the prestep and record_sim could clash
   robot.SetActiveDOFs(prob.GetDOFIndices(), prob.GetAffineDOFs())
   ss = rave.RobotStateSaver(robot)
 
+  assert 'n_timesteps' not in kwargs
+
+  orig_traj_len = len(traj)
+  expanded_traj_len = np.ceil(traj_total_time / dt)
+  if expanded_traj_len <= orig_traj_len:
+    expanded_traj = traj
+  else:
+    expanded_traj = mu.interp2d(np.linspace(0, traj_total_time, expanded_traj_len), np.linspace(0, traj_total_time, orig_traj_len), traj)
+
   def prestep(t):
-    robot.SetActiveDOFValues(robot_traj[t,:])
+    robot.SetActiveDOFValues(expanded_traj[t,:])
     bullet_robot.UpdateFromRave()
 
-  return record_simulation(bullet_env, bullet_rec_objs, n_timesteps, prestep_fn=prestep, **kwargs)
+  expanded_out = record_sim(bullet_env, bullet_rec_objs, n_timesteps=len(expanded_traj), prestep_fn=prestep, dt=dt, **kwargs)
 
+  inds_of_orig = int(float(expanded_traj_len)/orig_traj_len) * np.arange(0, orig_traj_len)
+  out = []
+  for i, expanded_i in enumerate(inds_of_orig):
+    assert expanded_out[expanded_i]['timestep'] == expanded_i
+    out.append({"timestep": i, "obj_states": expanded_out[expanded_i]["obj_states"]})
+  assert len(out) == orig_traj_len
+  return out
