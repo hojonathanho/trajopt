@@ -16,7 +16,10 @@ static vector<GraphHandlePtr> gSceneTrajHandles;
 static const float TRAJ_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_INACTIVE_TRANSPARENCY = .1;
-static const float TRAJ_SCENE_TRANSPARENCY_RATIO = .5;
+
+static const float TRAJ_SCENE_DEFAULT_TRANSPARENCY = .35;
+static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = 1;
+static const float TRAJ_SCENE_INACTIVE_TRANSPARENCY = .1;
 
 static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<GraphHandlePtr>& handles, vector<GraphHandlePtr>& scene_handles) {
   RobotBase::RobotStateSaver saver = rad.Save();
@@ -33,7 +36,7 @@ static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStat
         kinbodies_to_plot.push_back(rad.GetRobot()->GetEnv()->GetKinBody(o->name));
       }
       scene_handles.push_back(viewer.PlotKinBodies(kinbodies_to_plot));
-      SetTransparency(scene_handles.back(), TRAJ_DEFAULT_TRANSPARENCY*TRAJ_SCENE_TRANSPARENCY_RATIO);
+      SetTransparency(scene_handles.back(), TRAJ_SCENE_DEFAULT_TRANSPARENCY);
     }
   }
 }
@@ -62,10 +65,10 @@ static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<Constrai
 static void TrajPlayCallback(char c) {
   switch (c) {
   case '[':
-    gTrajPlayPos = std::min(gTrajPlayPos + 1, (int) gTrajHandles.size() - 1);
+    gTrajPlayPos = std::max(gTrajPlayPos - 1, 0);
     break;
   case ']':
-    gTrajPlayPos = std::max(gTrajPlayPos - 1, 0);
+    gTrajPlayPos = std::min(gTrajPlayPos + 1, (int) gTrajHandles.size() - 1);
     break;
   case '{':
     gTrajPlayPos = 0;
@@ -86,8 +89,13 @@ static void TrajPlayCallback(char c) {
       trans = gTrajPlayPos == i ? TRAJ_ACTIVE_TRANSPARENCY : TRAJ_INACTIVE_TRANSPARENCY;
     }
     SetTransparency(gTrajHandles[i], trans);
+
     if (!gSceneTrajHandles.empty()) {
-      SetTransparency(gSceneTrajHandles[i], trans*TRAJ_SCENE_TRANSPARENCY_RATIO);
+      trans = TRAJ_SCENE_DEFAULT_TRANSPARENCY;
+      if (gTrajPlayPos != -1) {
+        trans = gTrajPlayPos == i ? TRAJ_SCENE_ACTIVE_TRANSPARENCY : TRAJ_SCENE_INACTIVE_TRANSPARENCY;
+      }
+      SetTransparency(gSceneTrajHandles[i], trans);
     }
   }
 }
