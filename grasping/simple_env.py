@@ -37,3 +37,33 @@ def create():
   cyl.SetTransform(rave.matrixFromPose([1, 0, 0, 0, cyl_center[0], cyl_center[1], table_top_z+cyl_height/2.]))
 
   return env
+
+def create_topple_env():
+  env = rave.Environment()
+  env.StopSimulation()
+  env.Load('../data/pr2_table.env.xml')
+
+  pr2 = env.GetRobot('pr2')
+  pr2.SetDOFValues(PR2_LARM_SIDE_POSTURE, pr2.GetManipulator('leftarm').GetArmIndices())
+  pr2.SetDOFValues(mirror_arm_joints(PR2_LARM_SIDE_POSTURE), pr2.GetManipulator('rightarm').GetArmIndices())
+
+  table = env.GetKinBody('table')
+
+  table_aabb = table.ComputeAABB()
+  table_top_z = table_aabb.pos()[2] + table_aabb.extents()[2]
+  table_mid = table_aabb.pos()[:2]
+
+  box_center = table_mid + [-.4, -.1]
+  box_lwh = [0.05, 0.05, 0.5]
+  mk.create_box_from_bounds(env, [-box_lwh[0]/2., box_lwh[0]/2., -box_lwh[1]/2., box_lwh[1]/2., -box_lwh[2]/2., box_lwh[2]/2.], name='box_0')
+  box = env.GetKinBody('box_0')
+  box.SetTransform(rave.matrixFromPose([1, 0, 0, 0, box_center[0], box_center[1], table_top_z+box_lwh[2]/2.]))
+
+  cyl_height = .5
+  cyl_radius = .05
+  cyl_center = table_mid + [-.25, 0]
+  mk.create_cylinder(env, [0, 0, 0], cyl_radius, cyl_height, name='cyl_0')
+  cyl = env.GetKinBody('cyl_0')
+  cyl.SetTransform(rave.matrixFromPose([1, 0, 0, 0, cyl_center[0], cyl_center[1], table_top_z+cyl_height/2.]))
+
+  return env

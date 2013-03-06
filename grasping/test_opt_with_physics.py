@@ -3,12 +3,13 @@ import trajoptpy.kin_utils as ku
 import openravepy as rave
 import bulletsimpy
 import physics
+import optimization
 import simple_env
 from pprint import pprint
 import numpy as np
 import json
 
-env = simple_env.create()
+env = simple_env.create_topple_env()
 #env.SetViewer('qtcoin')
 pr2 = env.GetRobot('pr2')
 
@@ -65,7 +66,8 @@ def create_request(curr_iter, prev_traj, prev_scene_states):
     "costs" : [
     {
       "type" : "joint_vel", # joint-space velocity cost
-      "params": {"coeffs" : [10 if curr_iter == 0 else 1]} # a list of length one is automatically expanded to a list of length n_dofs
+      #"params": {"coeffs" : [10 if curr_iter == 0 else 1]} # a list of length one is automatically expanded to a list of length n_dofs
+      "params": {"coeffs" : [10]} # a list of length one is automatically expanded to a list of length n_dofs
       # Also valid: "coeffs" : [7,6,5,4,3,2,1]
     },
     {
@@ -109,11 +111,11 @@ def create_request(curr_iter, prev_traj, prev_scene_states):
 
 
 
-p = physics.OptParams()
+p = optimization.OptParams()
 p.traj_time = 5
 p.dynamic_obj_names = dyn_obj_names
 
-print physics.opt_and_sim_loop(p, create_request, env)
+print optimization.opt_and_sim_loop(p, create_request, env)
 
 
 
