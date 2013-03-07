@@ -31,14 +31,14 @@ def record_sim(bullet_env, bullet_rec_objs, n_timesteps, dt=0.01, max_substeps=1
 
   return out
 
-def record_sim_with_traj(prob, robot_name, traj, traj_total_time, bullet_env, bullet_rec_objs, dt=0.01, **kwargs):
+def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_time, bullet_env, bullet_rec_objs, dt=0.01, **kwargs):
   assert 'n_timesteps' not in kwargs
 
   rave_env = bullet_env.GetRaveEnv()
   robot, bullet_robot = rave_env.GetRobot(robot_name), bullet_env.GetObjectByName(robot_name)
   assert bullet_robot.IsKinematic() # if not, the prestep and record_sim could clash
-  robot.SetActiveDOFs(prob.GetDOFIndices(), prob.GetAffineDOFs())
   ss = rave.RobotStateSaver(robot)
+  robot.SetActiveDOFs(dof_inds, affine_dofs)
 
   orig_traj_len = len(traj)
   expanded_traj_len = np.ceil(traj_total_time / dt)
