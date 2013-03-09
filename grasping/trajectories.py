@@ -95,6 +95,7 @@ if __name__ == '__main__':
   def go(**kwargs):
 #    sine_traj = add_cartesian_sine(manip, line_traj, **kwargs)
     trajs = make_perturbation_basis(manip, line_traj)
+    print trajs, trajs.shape
     for sine_traj in trajs:
       for t in range(traj_len):
         pos0 = manip.GetTransform()[0:3,3]

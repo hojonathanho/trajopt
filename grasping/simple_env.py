@@ -54,7 +54,7 @@ def create_topple_env():
   table_mid = table_aabb.pos()[:2]
 
   box_center = table_mid + [-.4, -.1]
-  box_lwh = [0.05, 0.05, 0.5]
+  box_lwh = [0.1, 0.1, 0.5]
   mk.create_box_from_bounds(env, [-box_lwh[0]/2., box_lwh[0]/2., -box_lwh[1]/2., box_lwh[1]/2., -box_lwh[2]/2., box_lwh[2]/2.], name='box_0')
   box = env.GetKinBody('box_0')
   box.SetTransform(rave.matrixFromPose([1, 0, 0, 0, box_center[0], box_center[1], table_top_z+box_lwh[2]/2.]))

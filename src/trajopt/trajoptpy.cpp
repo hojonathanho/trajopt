@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include "macros.h"
 #include "sco/modeling_utils.hpp"
+#include "plot_callback.hpp"
 using namespace trajopt;
 using namespace Eigen;
 using namespace OpenRAVE;
@@ -316,6 +317,49 @@ public:
     assert(!!m_viewer);
     m_viewer->Idle();
   }
+  void PlotTraj(const string &manip_name, py::object traj, py::object scene_states) {
+    // construct a dummy problem and call the plot callback on it
+/*    ProblemConstructionInfo pci(m_viewer->GetEnv());
+    pci.basic_info.n_steps = py::len(traj);
+    pci.basic_info.manip = manip_name;*/
+
+    py::object request = py::dict();
+    request["basic_info"] = py::dict();
+    request["basic_info"]["n_steps"] = py::len(traj);
+    request["basic_info"]["manip"] = manip_name;
+    request["basic_info"]["start_fixed"] = false;
+    request["scene_states"] = scene_states;
+    request["init_info"] = py::dict();
+    request["init_info"]["type"] = "given_traj";
+    request["init_info"]["data"] = traj;
+#if 0
+    string request = (boost::format(
+      "request = {"
+        "\"basic_info\" : {"
+          "\"n_steps\" : %d,"
+          "\"manip\" : %s,"
+          "\"start_fixed\" : False"
+        "},"
+        "\"costs\" : [ {"
+          "\"type\" : \"joint_vel\","
+          "\"params\": {\"coeffs\" : [0]}"
+        "}, ],"
+        "\"constraints\" : [],"
+        "\"scene_states\": %s,"
+        "\"init_info\": {"
+          "\"type\": \"given_traj\","
+          "\"data\": %s"
+        "}"
+      "}"
+    ) % py::len(traj) % manip_name % py_json_dumps(scene_states) % py_json_dumps(traj)).str()
+#endif
+    py::object py_json_dumps = py::import("json").attr("dumps");
+    string json_string = py::extract<string>(py_json_dumps(request));
+    Json::Value json_root = readJsonFile(json_string);
+    TrajOptProbPtr prob = ConstructProblem(json_root, m_viewer->GetEnv());
+    vector<double> init_traj = trajToDblVec(prob->GetInitTraj());
+    PlotCallback(*prob)(prob.get(), init_traj);
+  }
 private:
   OSGViewerPtr m_viewer;
   PyOSGViewer() {}
@@ -374,6 +418,7 @@ BOOST_PYTHON_MODULE(ctrajoptpy) {
      .def("SetKinBodyTransparency", &PyOSGViewer::SetKinBodyTransparency)
      .def("SetAllTransparency", &PyOSGViewer::SetAllTransparency)
      .def("Idle", &PyOSGViewer::Idle)
+     .def("PlotTraj", &PyOSGViewer::PlotTraj)
     ;
   py::def("GetViewer", &PyGetViewer, "Get OSG viewer for environment or create a new one");
 
