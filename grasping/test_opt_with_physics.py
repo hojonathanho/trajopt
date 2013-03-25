@@ -112,7 +112,8 @@ def create_request(curr_iter, prev_traj, prev_scene_states):
 
 
 p = optimization.OptParams()
-p.traj_time = 5
+p.traj_time = 2
+p.dt = p.internal_dt = 0.05
 p.dynamic_obj_names = dyn_obj_names
 p.max_iter = 2
 
