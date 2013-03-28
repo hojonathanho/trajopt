@@ -64,27 +64,3 @@ def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_tim
     out.append({"timestep": i, "obj_states": expanded_out[expanded_i]["obj_states"]})
   assert len(out) == orig_traj_len + extra_steps
   return out
-
-
-def rec2dict(rec, obj_names):
-  # converts output of record_sim_*
-  # into a dictionary {obj_name: {field: vals_over_time}}
-  # e.g. {'box': {'xyz': np.array(...), 'wxyz': np.array(...)}, 'cup': ...}
-  timesteps = len(rec)
-  name2trajs = defaultdict(dict)
-
-  for t, state in enumerate(rec):
-    for s in state['obj_states']:
-      name = s['name']
-      if name not in obj_names:
-        continue
-
-      trajs = name2trajs[name]
-      for key, val in s.iteritems():
-        if key == 'name':
-          continue
-        if key not in trajs:
-          trajs[key] = np.zeros((timesteps, len(val)))
-        trajs[key][t,:] = val
-
-  return name2trajs

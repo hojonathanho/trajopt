@@ -1,10 +1,10 @@
-#import physics
 from scipy.linalg import block_diag
 import numpy as np
 from collections import defaultdict
 import optimization
 import bulletsimpy
 import physics
+import rec_util
 
 def fit_linear(X_Nn, Y_Nm):
   N, n = X_Nn.shape
@@ -19,33 +19,46 @@ def fit_linear(X_Nn, Y_Nm):
   a, residuals, rank, s = np.linalg.lstsq(Z, Y_Nm.reshape((N*m, 1)))
   return a.reshape((m, n))
 
+def fit_linear2(X_Nn, Y_Nm):
+  assert Y_Nm.shape[0] == X_Nn.shape[0]
+  return Y_Nm.T.dot(np.linalg.pinv(X_Nn.T))
+
 class SceneLinearization(object):
   def __init__(self, base_traj, base_scene_traj, jacs):
     self.base_traj = base_traj # robot traj linearized around (timesteps x dof)
-    self.base_scene_traj = base_scene_traj # {obj_name: {field: {val_over_time}}}, e.g. output from physics.rec2dict
+    self.base_scene_traj = base_scene_traj # {obj_name: {field: {val_over_time}}}, e.g. output from rec_util.rec2dict
     self.jacs = jacs # {obj_name: {field: {jacobians over time} }}
 
   def predict_single_timestep(self, t, joints, obj_names=None):
     assert 0 <= t < len(self.base_traj)
     djoints = (joints - self.base_traj[t,:]).T
-    out = defaultdict(dict)
+    obj_states = []
     for obj_name in self.jacs:
       if obj_names is not None and obj_name not in obj_names:
         continue
-      for field in self.jacs[obj_name]:
-        dfield = self.jacs[obj_name][field][t,:,:].dot(djoints)
-        out[obj_name][field] = dfield + self.base_scene_traj[obj_name][field][t,:].T
-    return out
+      state = {'name': obj_name}
+      for field, jac in self.jacs[obj_name].iteritems():
+        dfield = jac[t,:,:].dot(djoints)
+        state[field] = dfield + self.base_scene_traj[obj_name][field][t,:].T
+
+        # special case for rotations: need to re-normalize the quaternions
+        if field == 'wxyz':
+          state['wxyz'] /= np.linalg.norm(state['wxyz'])
+
+      obj_states.append(state)
+    return obj_states
 
   def predict_traj(self, traj, obj_names=None):
     assert len(traj) == len(self.base_traj)
-    for t in range(len(traj)):
-      curr_states = self.predict_single_timestep(t, traj[t,:], obj_names)
+    return rec_util.rec2dict([{
+      'timestep': t,
+      'obj_states': self.predict_single_timestep(t, traj[t,:], obj_names)
+    } for t in range(len(traj))])
 
 def linearize_objs(p, env, traj0, dynamic_obj_names):
   bullet_env, rec_full = optimization.clone_and_run(p, env, traj0)
   rec = rec_full[:-p.extra_steps] if p.extra_steps > 0 else rec_full
-  name2trajs = physics.rec2dict(rec, dynamic_obj_names)
+  name2trajs = rec_util.rec2dict(rec, dynamic_obj_names)
   timesteps = len(rec)
 
   djoints0 = traj0[1:,:] - traj0[:-1,:]
@@ -59,8 +72,8 @@ def linearize_objs(p, env, traj0, dynamic_obj_names):
     dquats = quats[1:,:] - quats[:-1,:]
     print dxyzs.shape[0], dquats.shape[0], djoints0.shape[0], timesteps-1
     assert dxyzs.shape[0] == dquats.shape[0] == djoints0.shape[0] == timesteps-1
-    xyz_jacs = np.zeros((timesteps-1, dxyzs.shape[1], djoints0.shape[1]))
-    quat_jacs = np.zeros((timesteps-1, dquats.shape[1], djoints0.shape[1]))
+    xyz_jacs = np.zeros((timesteps, dxyzs.shape[1], djoints0.shape[1]))
+    quat_jacs = np.zeros((timesteps, dquats.shape[1], djoints0.shape[1]))
     for t in range(timesteps-1):
       sample_djoints, sample_dxyz, sample_dquat = [], [], []
       # djoints0[t,:] induces the change dxyzs[t,:]
@@ -75,6 +88,9 @@ def linearize_objs(p, env, traj0, dynamic_obj_names):
       xyz_jacs[t,:,:] = fit_linear(sample_djoints, sample_dxyz)
       quat_jacs[t,:,:] = fit_linear(sample_djoints, sample_dquat)
 
+    xyz_jacs[timesteps-1,:,:] = xyz_jacs[timesteps-2,:,:]
+    quat_jacs[timesteps-1,:,:] = quat_jacs[timesteps-2,:,:]
+
     jacs[obj_name]['xyz'] = xyz_jacs
     jacs[obj_name]['wxyz'] = quat_jacs
 
@@ -82,6 +98,7 @@ def linearize_objs(p, env, traj0, dynamic_obj_names):
 
 def linearize_objs_numdiff(p, env, traj0, dynamic_obj_names):
   # this is pretty fucking bad (O(len(traj)^2))
+  # seems to give bad results too
 
   timesteps = len(traj0)
   num_joints = traj0.shape[1]
@@ -98,17 +115,17 @@ def linearize_objs_numdiff(p, env, traj0, dynamic_obj_names):
   for t in range(timesteps):
     print t, timesteps
     base_traj = traj0[:t+1,:]
-    p.traj_time = orig_traj_time * float(t) / float(timesteps-1)
+    p.traj_time = orig_traj_time * float(t+1) / float(timesteps)
     bullet_env, rec_full = optimization.clone_and_run(p, env, base_traj)
     rec = rec_full[:-p.extra_steps] if p.extra_steps > 0 else rec_full
-    base_name2trajs = physics.rec2dict(rec, dynamic_obj_names)
+    base_name2trajs = rec_util.rec2dict(rec, dynamic_obj_names)
 
     for curr_joint in range(num_joints):
       curr_traj = base_traj.copy()
       curr_traj[t,:] = base_traj[t,:] + djoints[curr_joint,:]
       bullet_env, rec_full = optimization.clone_and_run(p, env, curr_traj)
       rec = rec_full[:-p.extra_steps] if p.extra_steps > 0 else rec_full
-      curr_name2trajs = physics.rec2dict(rec, dynamic_obj_names)
+      curr_name2trajs = rec_util.rec2dict(rec, dynamic_obj_names)
 
       for obj_name in dynamic_obj_names:
         base, curr = base_name2trajs[obj_name], curr_name2trajs[obj_name]
@@ -119,33 +136,18 @@ def linearize_objs_numdiff(p, env, traj0, dynamic_obj_names):
   return SceneLinearization(traj0.copy(), base_name2trajs, jacs)
 
 
-def predict_objs_from_lin(traj, lin):
-  assert isinstance(lin, SceneLinearization):
-
-  for t in range(len(traj)):
-    lin.predict(
-  obj_trajs = defaultdict(dict)
-  timesteps = len(traj) - 1
-
-  for obj_name in lins:
-    for field in lins[obj_name]:
-      jacs = lins[obj_name][field]
-
-      for t in range(timesteps):
-        (traj[t,:] - orig_traj[t,:]).dot(jacs[t,:,:].T)
-
-
 def main():
   #X = np.array([[1, 2, 3], [4, 5, 6]])
   #Y = np.array([[0, 1], [0, 0]])
-  X = np.array([[1, 0, 0]])
-  Y = np.array([[1, 1]])
-  A = fit_linear(X, Y)
-  print 'A', A
-  print 'Y', Y
-  print 'out', X.dot(A.T)
-  print A.dot(np.array([1, 1, 0]).T)
-
+  X = np.random.rand(2, 7)
+  Y = np.random.rand(2, 3)
+  x = np.random.rand(7, 1)
+  for A in [fit_linear(X, Y), fit_linear2(X, Y)]:
+    print 'A', A
+    print 'Y', Y
+    print 'out', X.dot(A.T)
+    print A.dot(x)
+    print
 
   import openravepy as rave
   import simple_env
@@ -171,7 +173,6 @@ def main():
     env.GetKinBody(o.GetName()).SetTransform(o.GetTransform())
   env.UpdatePublishedBodies()
 
-
   N_STEPS = 20
   MANIP_NAME = "rightarm"
   quat_target = list(physics.get_bulletobj_state(bullet_cyl0)['wxyz'])
@@ -195,12 +196,19 @@ def main():
   traj = mu.linspace2d(init_joint_start, init_joint_target, N_STEPS)
   optimization.display_traj(p, env, traj)
 
-  out = linearize_objs(p, env, traj, dyn_obj_names)
-  print out.jacs
-  out = linearize_objs_numdiff(p, env, traj, dyn_obj_names)
-  print out.jacs
+  out0 = linearize_objs(p, env, traj, dyn_obj_names)
+  print out0.jacs
+  #out1 = linearize_objs_numdiff(p, env, traj, dyn_obj_names)
+  #print out1.jacs
 
   # test the linearization
+  import trajectories
+  traj2 = traj + trajectories.make_sine_perturbation(manip, traj, np.array([0, 0, 1]), amplitude=.1, half_cycles=2)
+  optimization.display_traj_and_rec(MANIP_NAME, env, traj, rec_util.dict2rec(out0.base_scene_traj))
+  for out in [out0]:
+    predicted = out.predict_traj(traj2)
+    print 'linearized traj'
+    optimization.display_traj_and_rec(MANIP_NAME, env, traj2, rec_util.dict2rec(predicted))
 
 
 if __name__ == '__main__':

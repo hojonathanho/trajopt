@@ -184,3 +184,7 @@ def display_traj(p, base_env, traj):
   viewer = trajoptpy.GetViewer(env)
   viewer.PlotTraj(p.manip_name, traj.tolist(), rec)
   env.Destroy()
+
+def display_traj_and_rec(manip_name, env, traj, rec):
+  viewer = trajoptpy.GetViewer(env)
+  viewer.PlotTraj(manip_name, traj.tolist(), rec)
