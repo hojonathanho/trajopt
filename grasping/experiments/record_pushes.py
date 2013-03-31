@@ -9,10 +9,34 @@ from CGAL.CGAL_AABB_tree import AABB_tree_Triangle_3_soup
 BT_STEP_PARAMS = (0.01, 100, 0.01) # dt, max substeps, internal dt
 FAR_POINT = [-100, -100, -100]
 SPHERE_RADIUS = .005 # TODO: set based on input mesh size?
-PUSH_DIST = .01 # TODO: same as above
+SPHERE_NAME = '_sphere_'
+PUSH_END_DIST = .00 # TODO: same as above
+PUSH_TIMESTEPS = 30
+PUSH_START_DIST = .02
+EXPLODE_THRESH = 2
+PLOTTING = True
+PLOT_EACH_PUSH = False
 
 def normalize(v):
   return v / np.linalg.norm(v)
+
+def transform_point(hmat, pt):
+  return hmat.dot(np.r_[pt, 1])[:3]
+
+def transform_points(hmat, points):
+  return rave.poseTransformPoints(rave.poseFromMatrix(hmat), points)
+
+def transform_normals(hmat, normals):
+  return normals.dot(np.linalg.inv(hmat[:3,:3]))
+
+def exploded(hmat, orig_hmat):
+  return np.linalg.norm(hmat[:3,3] - orig_hmat[:3,3]) > EXPLODE_THRESH
+
+def toppled(hmat, orig_hmat, thresh=.02):
+  R, R_orig = hmat[:3,:3], orig_hmat[:3,:3]
+  z = np.array([0, 0, 1])
+  print z.dot(R.dot(R_orig.T).dot(z)) 
+  return np.arccos(z.dot(R.dot(R_orig.T).dot(z))) > thresh
 
 def draw_aabb(env, aabb, linewidth=1.0):
   pos, ext = aabb.pos(), aabb.extents()
@@ -35,32 +59,36 @@ def draw_aabb(env, aabb, linewidth=1.0):
   return handles
 
 
-def create_grid_on_aabb(aabb, num, edge_padding=.005):
+def create_grid_on_aabb(aabb, density=.02, edge_padding=.005):
   aabb_pos, aabb_extents = aabb.pos(), aabb.extents()
 
-  points = np.empty((num*num*6, 3))
-  for fixed_axis in range(3):
+  IGNORE_Z = True
+  #points = np.empty((num*num*2*(2 if IGNORE_Z else 3), 3))
+  points = []
+  for fixed_axis in range(2 if IGNORE_Z else 3):
     vals = []
     varying_axes = [i for i in range(3) if i != fixed_axis]
     for varying_axis in varying_axes:
       lo = aabb_pos[varying_axis] - aabb_extents[varying_axis] + edge_padding
       hi = aabb_pos[varying_axis] + aabb_extents[varying_axis] - edge_padding
+      num = np.ceil((hi - lo)/density)
       vals.append(np.linspace(lo, hi, num))
     assert len(vals) == 2
     xys = np.concatenate(np.asarray(np.meshgrid(vals[0], vals[1])).T)
 
-    off = fixed_axis * 2*num*num
-    points[off:off+num*num,fixed_axis] = aabb_pos[fixed_axis] - aabb_extents[fixed_axis]
-    points[off:off+num*num,varying_axes] = xys
+    curr_pts = np.empty((len(xys)*2, 3))
+    curr_pts[:len(xys),fixed_axis] = aabb_pos[fixed_axis] - aabb_extents[fixed_axis]
+    curr_pts[:len(xys),varying_axes] = xys
+    curr_pts[len(xys):,fixed_axis] = aabb_pos[fixed_axis] + aabb_extents[fixed_axis]
+    curr_pts[len(xys):,varying_axes] = xys
+    points.extend(curr_pts)
 
-    points[off+num*num:off+2*num*num,fixed_axis] = aabb_pos[fixed_axis] + aabb_extents[fixed_axis]
-    points[off+num*num:off+2*num*num,varying_axes] = xys
+  return np.asarray(points)
 
-  return points
-
-def sample_mesh_points(geom, mesh):
+def sample_mesh_points(geom):
   # easy way: sample points on AABB, then project onto surface
   # done in the mesh's local coordinate system
+  mesh = geom.GetCollisionMesh()
   triangles = []
   for inds in mesh.indices:
     pts = [Point_3(*v) for v in mesh.vertices[inds]]
@@ -69,7 +97,7 @@ def sample_mesh_points(geom, mesh):
   tree = AABB_tree_Triangle_3_soup(triangles)
 
   aabb = geom.ComputeAABB(np.eye(4))
-  aabb_pts = create_grid_on_aabb(aabb, 10)
+  aabb_pts = create_grid_on_aabb(aabb)
   center = aabb.pos()
   rays = [Ray_3(Point_3(*center), Point_3(*p)) for p in aabb_pts]
 
@@ -102,12 +130,6 @@ def sample_mesh_points(geom, mesh):
 #def run_single_push(bt_env, bt_obj, ):
 #  pass
 
-def transform_points(hmat, points):
-  return rave.poseTransformPoints(rave.poseFromMatrix(hmat), points)
-
-def transform_normals(hmat, normals):
-  return np.linalg.inv(hmat[:3,:3]).T.dot(normals.T).T
-
 def run(env, obj_name):
   kinbody = env.GetKinBody(obj_name)
   assert len(kinbody.GetLinks()) == 1
@@ -116,45 +138,149 @@ def run(env, obj_name):
   link0 = kinbody.GetLinks()[0]
   assert len(link0.GetGeometries()) == 1
   geom0 = link0.GetGeometries()[0]
-  mesh = geom0.GetCollisionMesh()
 
-  sample_points, sample_normals = sample_mesh_points(geom0, mesh)
+  sample_points, sample_normals = sample_mesh_points(geom0)
   sample_trans = link0.GetTransform().dot(geom0.GetTransform())
 
-  env.SetViewer('qtcoin')
-  handles = []
-  handles += draw_aabb(env, geom0.ComputeAABB(sample_trans))
-  handles.append(env.plot3(points=transform_points(sample_trans, sample_points), pointsize=5.0))
-  handles.append(env.plot3(points=create_grid_on_aabb(geom0.ComputeAABB(sample_trans), 10), pointsize=1.0))
-  for pt, n in zip(transform_points(sample_trans, sample_points), transform_normals(sample_trans, sample_normals)):
-    handles.append(env.drawarrow(p1=pt, p2=pt+.01*n, linewidth=.001))
-  raw_input('hi')
 
   # the pushing sphere
-  sphere = mk.create_spheres(env, [FAR_POINT], .01, '_sphere_')
+  sphere_xml = '''
+  <Environment>
+    <KinBody name="%s">
+      <Body type="static">
+        <Geom type="sphere">
+          <Translation>0 0 0</Translation>
+          <Radius>%f</Radius>
+        </Geom>
+      </Body>
+    </KinBody>
+  </Environment>
+  ''' % (SPHERE_NAME, SPHERE_RADIUS)
+  env.LoadData(sphere_xml)
+  sphere = env.GetKinBody(SPHERE_NAME)
+  sphere.SetTransform(np.eye(4))
 
   # setup physics sim
   bt_env = bulletsimpy.BulletEnvironment(env, [obj_name])
   bt_obj = bt_env.GetObjectByName(obj_name)
-  bt_sphere = bt_env.GetObjectByName('_sphere_')
+  bt_sphere = bt_env.GetObjectByName(SPHERE_NAME)
   # TODO: set sim params, scaling?
 
   # run to stabilize first
-  for i in range(20):
+  for _ in range(300):
     bt_env.Step(*BT_STEP_PARAMS)
+  bt_obj.UpdateRave()
+  env.UpdatePublishedBodies()
 
   init_obj_trans = bt_obj.GetTransform()
+  print 'init obj trans', init_obj_trans
+
+
+  result_obj_trans = np.empty((len(sample_points), 4, 4))
+  result_exploded = np.empty(len(sample_points), dtype=bool)
+  result_toppled = np.empty(len(sample_points), dtype=bool)
+  for curr_iter, (sample_pt, sample_n) in enumerate(zip(sample_points, sample_normals)):
+    print curr_iter, len(sample_points)
+    curr_sample_to_world = link0.GetTransform().dot(geom0.GetTransform())
+    if PLOTTING:
+      handles = []
+      if PLOT_EACH_PUSH:
+        handles += draw_aabb(env, geom0.ComputeAABB(curr_sample_to_world))
+        handles.append(env.plot3(points=transform_points(curr_sample_to_world, sample_points), pointsize=2.0))
+        handles.append(env.plot3(points=create_grid_on_aabb(geom0.ComputeAABB(curr_sample_to_world), 10), pointsize=1.0))
+        for pt, n in zip(transform_points(curr_sample_to_world, sample_points), transform_normals(curr_sample_to_world, sample_normals)):
+          handles.append(env.drawarrow(p1=pt, p2=pt+.01*n, linewidth=.001))
+
+    pt = transform_point(curr_sample_to_world, sample_pt)
+    normal = transform_normals(curr_sample_to_world, sample_n)
+
+    # execute push
+    line_start_pt, line_end_pt = pt + PUSH_START_DIST*normal, pt - PUSH_END_DIST*normal
+    for i in range(PUSH_TIMESTEPS):
+      frac = float(i)/float(PUSH_TIMESTEPS-1)
+      curr_pt = (1.-frac)*line_start_pt + frac*line_end_pt
+      bt_sphere.SetTransform(rave.matrixFromPose(np.r_[[1, 0, 0, 0], curr_pt]))
+      bt_env.Step(*BT_STEP_PARAMS)
+    if PLOTTING and PLOT_EACH_PUSH:
+      bt_sphere.UpdateRave()
+      bt_obj.UpdateRave()
+      print curr_iter, curr_pt, bt_obj.GetTransform()[:3,3]
+      env.UpdatePublishedBodies()
+      raw_input('asdfx')
+
+    result_obj_trans[curr_iter,:,:] = bt_obj.GetTransform()
+    result_exploded[curr_iter] = exploded(result_obj_trans[curr_iter,:,:], init_obj_trans)
+    result_toppled[curr_iter] = not result_exploded[curr_iter] and toppled(result_obj_trans[curr_iter,:,:], init_obj_trans)
+
+    # reset state to prepare for next push
+    bt_sphere.SetTransform(rave.matrixFromPose(np.r_[[1, 0, 0, 0], FAR_POINT]))
+    bt_sphere.UpdateRave()
+    bt_obj.SetLinearVelocity([0, 0, 0])
+    bt_obj.SetAngularVelocity([0, 0, 0])
+    bt_obj.SetTransform(init_obj_trans)
+    bt_obj.UpdateRave()
+    # stabilize
+    for i in range(5): bt_env.Step(*BT_STEP_PARAMS)
+
+  print 'exploded:', np.count_nonzero(result_exploded), 'out of', len(result_obj_trans)
+  print 'toppled:', np.count_nonzero(result_toppled), 'out of', len(result_obj_trans)
+
+  if PLOTTING:
+    curr_sample_to_world = link0.GetTransform().dot(geom0.GetTransform())
+    toppled_inds = np.nonzero(result_toppled)
+    if toppled_inds:
+      handles.append(env.plot3(points=transform_points(curr_sample_to_world, sample_points[toppled_inds]), pointsize=5.0))
+    env.UpdatePublishedBodies()
+    raw_input('done')
+
+  return sample_points, sample_normals, toppled, exploded
 
 def setup_testing_env():
-  # object with a table under it
-  pass
+  env = rave.Environment()
+  table_xml = '''
+  <Environment>
+    <KinBody name="table">
+      <Body type="static" name="table_link">
+        <Geom type="box">
+          <Translation>0 0 -.025</Translation>
+          <Extents>1 1 .05</Extents>
+        </Geom>
+      </Body>
+    </KinBody>
+  </Environment>
+  '''
+  env.LoadData(table_xml)
+  #env.Load('data/mug1.kinbody.xml')
+
+  table_mid = np.array([0, 0])
+  table_top_z = 0
+  box_center = [0, 0]
+  box_lwh = [0.1, 0.2, 0.5]
+  mk.create_box_from_bounds(env, [-box_lwh[0]/2., box_lwh[0]/2., -box_lwh[1]/2., box_lwh[1]/2., -box_lwh[2]/2., box_lwh[2]/2.], name='box')
+  box = env.GetKinBody('box')
+  box.SetTransform(rave.matrixFromPose([1, 0, 0, 0, box_center[0], box_center[1], table_top_z+box_lwh[2]/2.]))
+
+
+  env.StopSimulation()
+  #env.Load('../../data/box.xml')
+  if PLOTTING:
+    env.SetViewer('qtcoin')
+    raw_input("set up done")
+  return env
 
 
 if __name__ == '__main__':
   print create_grid_on_aabb(rave.AABB([0, 0, 0], [1, 1, 1]), 2)
 
-  env = rave.Environment()
-  #env.Load('../../data/box.xml')
-  env.Load('data/mug1.kinbody.xml')
+  env = setup_testing_env()
+  print env.GetKinBody('box').GetTransform()
 
-  run(env, 'mug')
+
+# clone = env.CloneSelf(rave.CloningOptions.Bodies)
+# clone.StopSimulation()
+
+  points, normals, toppled, exploded = run(env, 'box')
+
+  if not PLOTTING:
+    env.SetViewer('qtcoin')
+
