@@ -151,15 +151,15 @@ class FuncOnMesh(object):
     # TODO: interpolation
     return self.point_vals[self.kdtree.query(pt)[1]]
 
-  def jacobian(self, pt):
+  def gradient(self, pt):
     near_inds = self._get_nearby_points(pt, self.mindist*5)
     if len(near_inds) < 3:
       raise RuntimeError('no way im gonna fit a plane')
     points, vals = self.sample_points[near_inds], self.point_vals[near_inds]
     return fit_linear(points - pt[None,:], vals - self.value(pt))
 
-  def jacobian_nd(self, pt):
-    pass
+  def gradient_nd(self, pt):
+    raise NotImplementedError
 
   def plot_vertices(self, env, vert_trans=lambda vs: vs):
     # blue is 0, red is 1
