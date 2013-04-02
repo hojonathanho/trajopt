@@ -2,23 +2,21 @@ import bulletsimpy
 import openravepy as rave
 import trajoptpy.make_kinbodies as mk
 import numpy as np
+import meshes
 
-from CGAL.CGAL_Kernel import Point_3, Triangle_3, Ray_3
-from CGAL.CGAL_AABB_tree import AABB_tree_Triangle_3_soup
+#import argparse
+#parser = argparse.ArgumentParser()
 
 BT_STEP_PARAMS = (0.01, 100, 0.01) # dt, max substeps, internal dt
 FAR_POINT = [-100, -100, -100]
 SPHERE_RADIUS = .005 # TODO: set based on input mesh size?
 SPHERE_NAME = '_sphere_'
-PUSH_END_DIST = .00 # TODO: same as above
-PUSH_TIMESTEPS = 30
+PUSH_END_DIST = .01 # TODO: same as above
+PUSH_TIMESTEPS = 20
 PUSH_START_DIST = .02
 EXPLODE_THRESH = 2
 PLOTTING = True
 PLOT_EACH_PUSH = False
-
-def normalize(v):
-  return v / np.linalg.norm(v)
 
 def transform_point(hmat, pt):
   return hmat.dot(np.r_[pt, 1])[:3]
@@ -59,74 +57,6 @@ def draw_aabb(env, aabb, linewidth=1.0):
   return handles
 
 
-def create_grid_on_aabb(aabb, density=.02, edge_padding=.005):
-  aabb_pos, aabb_extents = aabb.pos(), aabb.extents()
-
-  IGNORE_Z = True
-  #points = np.empty((num*num*2*(2 if IGNORE_Z else 3), 3))
-  points = []
-  for fixed_axis in range(2 if IGNORE_Z else 3):
-    vals = []
-    varying_axes = [i for i in range(3) if i != fixed_axis]
-    for varying_axis in varying_axes:
-      lo = aabb_pos[varying_axis] - aabb_extents[varying_axis] + edge_padding
-      hi = aabb_pos[varying_axis] + aabb_extents[varying_axis] - edge_padding
-      num = np.ceil((hi - lo)/density)
-      vals.append(np.linspace(lo, hi, num))
-    assert len(vals) == 2
-    xys = np.concatenate(np.asarray(np.meshgrid(vals[0], vals[1])).T)
-
-    curr_pts = np.empty((len(xys)*2, 3))
-    curr_pts[:len(xys),fixed_axis] = aabb_pos[fixed_axis] - aabb_extents[fixed_axis]
-    curr_pts[:len(xys),varying_axes] = xys
-    curr_pts[len(xys):,fixed_axis] = aabb_pos[fixed_axis] + aabb_extents[fixed_axis]
-    curr_pts[len(xys):,varying_axes] = xys
-    points.extend(curr_pts)
-
-  return np.asarray(points)
-
-def sample_mesh_points(geom):
-  # easy way: sample points on AABB, then project onto surface
-  # done in the mesh's local coordinate system
-  mesh = geom.GetCollisionMesh()
-  triangles = []
-  for inds in mesh.indices:
-    pts = [Point_3(*v) for v in mesh.vertices[inds]]
-    assert len(pts) == 3
-    triangles.append(Triangle_3(*pts))
-  tree = AABB_tree_Triangle_3_soup(triangles)
-
-  aabb = geom.ComputeAABB(np.eye(4))
-  aabb_pts = create_grid_on_aabb(aabb)
-  center = aabb.pos()
-  rays = [Ray_3(Point_3(*center), Point_3(*p)) for p in aabb_pts]
-
-  surface_points, normals = [], []
-  for ray in rays:
-    intersections = []
-    tree.all_intersections(ray, intersections)
-    if len(intersections) == 0:
-      continue
-    farthest_dist, farthest_intersection = -1, None
-    for i in intersections:
-      o = i[0]
-      if not o.is_Point_3():
-        continue
-      pt = o.get_Point_3()
-      npt = np.array([pt.x(), pt.y(), pt.z()])
-      dist = np.linalg.norm(npt - center)
-      if dist > farthest_dist:
-        farthest_dist = dist
-        farthest_intersection = i
-    if farthest_intersection is not None:
-      pt = farthest_intersection[0].get_Point_3()
-      surface_points.append(np.array([pt.x(), pt.y(), pt.z()]))
-      tri = mesh.vertices[mesh.indices[farthest_intersection[1]]]
-      normals.append(normalize(np.cross(tri[1] - tri[0], tri[2] - tri[0])))
-
-  return np.asarray(surface_points), np.asarray(normals)
-
-
 #def run_single_push(bt_env, bt_obj, ):
 #  pass
 
@@ -139,7 +69,7 @@ def run(env, obj_name):
   assert len(link0.GetGeometries()) == 1
   geom0 = link0.GetGeometries()[0]
 
-  sample_points, sample_normals = sample_mesh_points(geom0)
+  sample_points, sample_normals = meshes.sample_mesh_points(geom0)
   sample_trans = link0.GetTransform().dot(geom0.GetTransform())
 
 
@@ -187,7 +117,7 @@ def run(env, obj_name):
       if PLOT_EACH_PUSH:
         handles += draw_aabb(env, geom0.ComputeAABB(curr_sample_to_world))
         handles.append(env.plot3(points=transform_points(curr_sample_to_world, sample_points), pointsize=2.0))
-        handles.append(env.plot3(points=create_grid_on_aabb(geom0.ComputeAABB(curr_sample_to_world), 10), pointsize=1.0))
+        handles.append(env.plot3(points=meshes.create_grid_on_aabb(geom0.ComputeAABB(curr_sample_to_world), 10), pointsize=1.0))
         for pt, n in zip(transform_points(curr_sample_to_world, sample_points), transform_normals(curr_sample_to_world, sample_normals)):
           handles.append(env.drawarrow(p1=pt, p2=pt+.01*n, linewidth=.001))
 
@@ -227,11 +157,27 @@ def run(env, obj_name):
 
   if PLOTTING:
     curr_sample_to_world = link0.GetTransform().dot(geom0.GetTransform())
-    toppled_inds = np.nonzero(result_toppled)
-    if toppled_inds:
-      handles.append(env.plot3(points=transform_points(curr_sample_to_world, sample_points[toppled_inds]), pointsize=5.0))
+    toppled_inds = np.nonzero(result_toppled)[0]
+    if toppled_inds.any():
+      pass
+      #handles.append(env.plot3(points=transform_points(curr_sample_to_world, sample_points[toppled_inds]), pointsize=5.0))
     env.UpdatePublishedBodies()
     raw_input('done')
+
+    mesh = geom0.GetCollisionMesh()
+    meshes.print_off_data(*meshes.delete_facing(mesh.vertices, mesh.indices))
+    #fn = meshes.FuncOnMesh(mesh.vertices, mesh.indices, refine_depth=6)
+    fn = meshes.FuncOnMesh(geom0)
+    fn.set_from_samples(sample_points[toppled_inds], np.repeat(1, len(toppled_inds)))
+
+    for i in range(10):
+      print i
+      fn.smooth_by_euclidean(radius=.05, iters=5)
+      h = fn.plot_vertices(env, vert_trans=lambda vs: transform_points(curr_sample_to_world, vs))
+      raw_input('asdf')
+
+    #handles.append(env.drawtrimesh(fn.vertices, fn.indices))
+    raw_input('asdf')
 
   return sample_points, sample_normals, toppled, exploded
 
@@ -270,11 +216,10 @@ def setup_testing_env():
 
 
 if __name__ == '__main__':
-  print create_grid_on_aabb(rave.AABB([0, 0, 0], [1, 1, 1]), 2)
+  print meshes.create_grid_on_aabb(rave.AABB([0, 0, 0], [1, 1, 1]), 2)
 
   env = setup_testing_env()
   print env.GetKinBody('box').GetTransform()
-
 
 # clone = env.CloneSelf(rave.CloningOptions.Bodies)
 # clone.StopSimulation()
