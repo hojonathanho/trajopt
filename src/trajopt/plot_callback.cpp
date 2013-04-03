@@ -11,8 +11,9 @@ using namespace util;
 namespace trajopt {
 
 static int gTrajPlayPos;
-static vector<GraphHandlePtr> gTrajHandles;
+static vector<vector<GraphHandlePtr> > gTrajHandles;
 static vector<GraphHandlePtr> gSceneTrajHandles;
+static bool gCallbacksRegistered = false;
 
 static const float TRAJ_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
@@ -22,16 +23,20 @@ static const float TRAJ_SCENE_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_SCENE_INACTIVE_TRANSPARENCY = .1;
 
-static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<GraphHandlePtr>& handles, vector<GraphHandlePtr>& scene_handles) {
+static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<vector<GraphHandlePtr> >& handles, vector<GraphHandlePtr>& scene_handles) {
   RobotBase::RobotStateSaver saver = rad.Save();
   std::set<KinBodyPtr> bodies;
   rad.GetRobot()->GetAttached(bodies);
   for (int i=0; i < x.rows(); ++i) {
     rad.SetDOFValues(toDblVec(x.row(i)));
+
+    vector<GraphHandlePtr> local_handles;
     BOOST_FOREACH(const KinBodyPtr& body, bodies) {
-      handles.push_back(viewer.PlotKinBody(body));
-      SetTransparency(handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
+      local_handles.push_back(viewer.PlotKinBody(body));
+      SetTransparency(local_handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
     }
+    handles.push_back(local_handles);
+
     if (!scene_states.empty()) {
       assert(scene_states.size() == x.rows());
       SceneStateSetter sss(rad.GetRobot()->GetEnv(), scene_states[i]);
@@ -66,7 +71,7 @@ static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<Constrai
   gTrajHandles.clear(); gSceneTrajHandles.clear();
 }
 
-static void TrajPlayCallback(char c) {
+static void TrajPlayCallback(OSGViewerPtr viewer, char c) {
   switch (c) {
   case '[':
     gTrajPlayPos = std::max(gTrajPlayPos - 1, 0);
@@ -92,7 +97,9 @@ static void TrajPlayCallback(char c) {
     if (gTrajPlayPos != -1) {
       trans = gTrajPlayPos == i ? TRAJ_ACTIVE_TRANSPARENCY : TRAJ_INACTIVE_TRANSPARENCY;
     }
-    SetTransparency(gTrajHandles[i], trans);
+    for (int j = 0; j < gTrajHandles[i].size(); ++j) {
+      SetTransparency(gTrajHandles[i][j], trans);
+    }
 
     if (!gSceneTrajHandles.empty()) {
       trans = TRAJ_SCENE_DEFAULT_TRANSPARENCY;
@@ -102,14 +109,20 @@ static void TrajPlayCallback(char c) {
       SetTransparency(gSceneTrajHandles[i], trans);
     }
   }
+
+  viewer->Draw();
 }
 
 static void RegisterTrajPlayCallbacks(OSGViewerPtr viewer) {
-  viewer->AddKeyCallback('[', boost::bind(&TrajPlayCallback, '['), "Trajectory playback -- back one step");
-  viewer->AddKeyCallback(']', boost::bind(&TrajPlayCallback, ']'), "Trajectory playback -- forward one step");
-  viewer->AddKeyCallback('{', boost::bind(&TrajPlayCallback, '{'), "Trajectory playback -- go to beginning");
-  viewer->AddKeyCallback('}', boost::bind(&TrajPlayCallback, '}'), "Trajectory playback -- go to end");
-  viewer->AddKeyCallback('\\', boost::bind(&TrajPlayCallback, '\\'), "Trajectory playback -- exit playback mode");
+  if (gCallbacksRegistered) {
+    return;
+  }
+  viewer->AddKeyCallback('[', boost::bind(&TrajPlayCallback, viewer, '['), "Trajectory playback -- back one step");
+  viewer->AddKeyCallback(']', boost::bind(&TrajPlayCallback, viewer, ']'), "Trajectory playback -- forward one step");
+  viewer->AddKeyCallback('{', boost::bind(&TrajPlayCallback, viewer, '{'), "Trajectory playback -- go to beginning");
+  viewer->AddKeyCallback('}', boost::bind(&TrajPlayCallback, viewer, '}'), "Trajectory playback -- go to end");
+  viewer->AddKeyCallback('\\', boost::bind(&TrajPlayCallback, viewer, '\\'), "Trajectory playback -- exit playback mode");
+  gCallbacksRegistered = true;
 }
 
 Optimizer::Callback PlotCallback(TrajOptProb& prob) {

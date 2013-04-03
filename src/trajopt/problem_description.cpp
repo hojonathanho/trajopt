@@ -477,16 +477,14 @@ void CollisionCostInfo::fromJson(const Value& v) {
   childFromJson(params, last_step, "last_step", n_steps-1);
   FAIL_IF_FALSE((first_step >= 0) && (first_step < n_steps));
   FAIL_IF_FALSE((last_step >= first_step) && (last_step < n_steps));
-  childFromJson(params, coeffs, "coeffs");
   int n_terms = last_step - first_step + 1;
-  tag2coeffs.resize(n_terms);
-  tag2dist_pen.resize(n_terms);
 
   if (params.isMember("object_costs")) {
     use_same_cost = false;
+    tag2coeffs.resize(n_terms);
+    tag2dist_pen.resize(n_terms);
     const Value& object_costs = params["object_costs"];
     for (int i = 0; i < object_costs.size(); ++i) {
-      cout << "object cost start" << endl;
       string tag_name = object_costs[i]["name"].asString();
       DblVec cur_coeffs;
       cout << tag_name << endl;
@@ -507,7 +505,6 @@ void CollisionCostInfo::fromJson(const Value& v) {
       for (int j = 0; j < n_terms; ++j) {
         tag2dist_pen[j].insert( std::pair<string, double>(tag_name, cur_dist_pen[j]) );
       }
-      cout << "object cost end" << endl;
     }
   } else {
     use_same_cost = true;

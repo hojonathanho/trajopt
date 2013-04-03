@@ -1,5 +1,6 @@
 import numpy as np
 import transformations as trans
+import rec_util
 
 def tipping_cost(hmat):
   z = np.array([0, 0, 1])
@@ -7,7 +8,7 @@ def tipping_cost(hmat):
   return angle_from_z / (np.pi/2.)
 
 def scene_rec_cost(rec, dynamic_obj_names):
-  obj2trajs = physics.rec2dict(rec, dynamic_obj_names)
+  obj2trajs = rec_util.rec2dict(rec, dynamic_obj_names)
   timesteps = len(rec)
   cost = 0
 

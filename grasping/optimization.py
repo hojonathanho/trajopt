@@ -44,9 +44,12 @@ def clone_and_run(p, env, traj):
   rec = physics.record_sim_with_traj(p.robot_name, p.dof_inds, p.affine_dofs, traj, p.traj_time, bullet_env, bullet_dynamic_objs, extra_steps=p.extra_steps, update_rave_env=False, dt=p.dt, max_substeps=p.max_substeps, internal_dt=p.internal_dt)
   return bullet_env, rec
 
-def eval_scene_cost(p, env, traj):
+def eval_scene_cost(p, env, traj, return_full=False):
   rec = clone_and_run(p, env, traj)[1]
-  return costs.scene_rec_cost(rec, p.dynamic_obj_names)
+  cost = costs.scene_rec_cost(rec, p.dynamic_obj_names)
+  if return_full:
+    return cost, rec
+  return cost
 
 def opt_and_sim_loop(p, base_env, create_opt_request_fn): # p is an OptParams
   static_obj_names = [b.GetName() for b in base_env.GetBodies() if b.GetName() not in p.dynamic_obj_names]
@@ -78,7 +81,7 @@ def opt_and_sim_loop(p, base_env, create_opt_request_fn): # p is an OptParams
     p.affine_dofs = prob.GetAffineDOFs()
 
     ### SIMULATE ###
-    cost = eval_scene_cost(p, base_env, result.GetTraj())
+    cost, rec = eval_scene_cost(p, base_env, result.GetTraj(), return_full=True)
 #   env_copy = base_env.CloneSelf(rave.CloningOptions.Bodies)
 #   env_copy.StopSimulation()
 
@@ -100,7 +103,7 @@ def opt_and_sim_loop(p, base_env, create_opt_request_fn): # p is an OptParams
     print "============= COST ==========", cost
 
     curr_iter += 1
-    prev_scene_states = rec
+    prev_scene_states = rec[:-p.extra_steps] if p.extra_steps > 0 else rec
     prev_traj = result.GetTraj()
 
   env.Destroy()
