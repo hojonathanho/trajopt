@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include "trajopt/problem_description.hpp"
 #include "trajopt/collision_avoidance.hpp"
+#include <set>
 using namespace OpenRAVE;
 using namespace util;
 namespace trajopt {
@@ -23,11 +24,14 @@ static const float TRAJ_SCENE_INACTIVE_TRANSPARENCY = .1;
 
 static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<GraphHandlePtr>& handles, vector<GraphHandlePtr>& scene_handles) {
   RobotBase::RobotStateSaver saver = rad.Save();
+  std::set<KinBodyPtr> bodies;
+  rad.GetRobot()->GetAttached(bodies);
   for (int i=0; i < x.rows(); ++i) {
     rad.SetDOFValues(toDblVec(x.row(i)));
-    handles.push_back(viewer.PlotKinBody(rad.GetRobot()));
-    SetTransparency(handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
-
+    BOOST_FOREACH(const KinBodyPtr& body, bodies) {
+      handles.push_back(viewer.PlotKinBody(body));
+      SetTransparency(handles.back(), TRAJ_DEFAULT_TRANSPARENCY);
+    }
     if (!scene_states.empty()) {
       assert(scene_states.size() == x.rows());
       SceneStateSetter sss(rad.GetRobot()->GetEnv(), scene_states[i]);

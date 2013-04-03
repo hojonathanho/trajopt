@@ -13,9 +13,8 @@ using std::vector;
 
 namespace py = boost::python;
 
-
-bool gInteractive = true;
-py::object openravepy, np_mod;
+bool gInteractive = false;
+py::object np_mod;
 
 py::list toPyList(const IntVec& x) {
   py::list out;
@@ -55,6 +54,7 @@ py::object toNdarray2(const T* data, size_t dim0, size_t dim1) {
 
 
 EnvironmentBasePtr GetCppEnv(py::object py_env) {
+  py::object openravepy = py::import("openravepy");
   int id = py::extract<int>(openravepy.attr("RaveGetEnvironmentId")(py_env));
   EnvironmentBasePtr cpp_env = RaveGetEnvironment(id);
   return cpp_env;
@@ -374,8 +374,14 @@ PyOSGViewer PyGetViewer(py::object py_env) {
 
 BOOST_PYTHON_MODULE(ctrajoptpy) {
 
-  openravepy = py::import("openravepy");
   np_mod = py::import("numpy");
+
+  py::object openravepy = py::import("openravepy");
+
+  string pyversion = py::extract<string>(openravepy.attr("__version__"));
+  if (OPENRAVE_VERSION_STRING != pyversion) {
+    PRINT_AND_THROW("the openrave on your pythonpath is different from the openrave version that trajopt links to!");
+  }
 
   py::class_<PyTrajOptProb>("TrajOptProb", py::no_init)
       .def("GetDOFIndices", &PyTrajOptProb::GetDOFIndices)

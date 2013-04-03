@@ -1,6 +1,6 @@
 #include "solver_interface.hpp"
 #include "gurobi_interface.hpp"
-#include "utils/logging1.hpp"
+#include "utils/logging.hpp"
 extern "C" {
 #include "gurobi_c.h"
 }
@@ -111,7 +111,7 @@ Var GurobiModel::addVar(const string& name, double lb, double ub) {
 
 
 Cnt GurobiModel::addEqCnt(const AffExpr& expr, const string& name) {
-  LOG_DEBUG("adding ineq: %s <= 0", CSTR(expr));
+  LOG_DEBUG("adding eq constraint: %s = 0", CSTR(expr));
   vector<int> inds = vars2inds(expr.vars);
   vector<double> vals = expr.coeffs;
   simplify2(inds, vals);

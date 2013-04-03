@@ -1,6 +1,6 @@
 #include "optimizers.hpp"
 #include "modeling.hpp"
-#include "utils/logging1.hpp"
+#include "utils/logging.hpp"
 #include <boost/foreach.hpp>
 #include "solver_interface.hpp"
 #include "expr_ops.hpp"
@@ -261,8 +261,8 @@ OptStatus BasicTrustRegionSQP::optimize() {
       QuadExpr objective;
       BOOST_FOREACH(ConvexObjectivePtr& co, cost_models)exprInc(objective, co->quad_);
       BOOST_FOREACH(ConvexObjectivePtr& co, cnt_cost_models){
-      exprInc(objective, co->quad_);
-    }
+        exprInc(objective, co->quad_);
+      }
 //    objective = cleanupExpr(objective);
       model_->setObjective(objective);
 
@@ -352,7 +352,7 @@ OptStatus BasicTrustRegionSQP::optimize() {
         goto penaltyadjustment;
       } else if (iter >= max_iter_) {
         LOG_INFO("iteration limit");
-        retval = OPT_ITERATION_LIMIT;
+        retval = OPT_SCO_ITERATION_LIMIT;
         goto cleanup;
       }
     }
@@ -371,7 +371,7 @@ OptStatus BasicTrustRegionSQP::optimize() {
 
 
   }
-  retval = OPT_ITERATION_LIMIT;
+  retval = OPT_PENALTY_ITERATION_LIMIT;
   LOG_INFO("optimization couldn't satisfy all constraints");
 
 

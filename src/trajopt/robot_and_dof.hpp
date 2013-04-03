@@ -27,13 +27,13 @@ public:
   std::vector<KinBody::LinkPtr> GetAffectedLinks();
   void GetAffectedLinks(std::vector<KinBody::LinkPtr>& links, bool only_with_geom, vector<int>& link_inds);
   DblVec RandomDOFValues();
-  void SetRobotActiveDOFs() {robot->SetActiveDOFs(joint_inds, affinedofs);}
+  void SetRobotActiveDOFs();
 private:
   OR::RobotBasePtr robot;
   IntVec joint_inds;
   int affinedofs;
   OR::Vector rotationaxis;
 };
-typedef shared_ptr<RobotAndDOF> RobotAndDOFPtr;
+typedef boost::shared_ptr<RobotAndDOF> RobotAndDOFPtr;
 
 }

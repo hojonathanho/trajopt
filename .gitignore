@@ -31,3 +31,11 @@ dox_build
 .*.swo
 .*.swm
 .*.swp
+.hg
+ext/rbdl/addons
+ext/rbdl/src/Eigen
+ext/rbdl/vendor
+ext/rbdl/doc
+*.vcproj
+*.sln
+callgrind.*

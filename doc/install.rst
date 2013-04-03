@@ -14,12 +14,17 @@ Dependencies
 - CMake
 - boost
 - Eigen
-- Gurobi (though in the future we plan to support other solvers and provide a custom solver)
+- Gurobi [#gurobi]_
+
+.. [#gurobi] We plan to eventually support a solver with a more permissive license.
 
 Instructions
 -------------
 
-- install OpenRAVE 0.9 or above (currently, that means getting the latest sources) using `instructions on openrave.org <http://openrave.org/docs/latest_stable>`_
+- install OpenRAVE 0.8 or above
+
+.. note:: For best results, install a new version of OpenRAVE (version 0.9).  Due to a recent bugfix, optimization over affine DOFs won't work with 0.8. You can install from source or use the `openrave testing <https://launchpad.net/~openrave/+archive/testing>`_ PPA.
+
 
 - install OpenSceneGraph, CMake, boost, and Eigen using your package manager. In Ubuntu, that's::
 
@@ -72,7 +77,7 @@ in the build directory. The output should look something like this::
 
   Total Test time (real) =   8.09 sec
 
-If one of the unit tests fails, you can get more diagnostic information by running with ``ctest -V``, or running the test scripts individual. The python executables are in ``SOURCE_DIR/python_examples`` and the compiled c++ executables are in ``BUILD_DIR/bin``. 
+If one of the unit tests fails, you can get more diagnostic information by running with ``ctest -V``, or running the test scripts individually. The python executables are in ``SOURCE_DIR/python_examples`` and the compiled c++ executables are in ``BUILD_DIR/bin``. 
 
 
 Common installation problems
@@ -86,7 +91,7 @@ Common installation problems
     [plugindatabase.h:929] /usr/local/share/openrave-0.9/plugins/libbulletrave.so: /usr/local/share/openrave-0.9/plugins/libbulletrave.so: undefined symbol: _ZNK16btCollisionShape17getBoundingSphereER9btVector3Rf
     Segmentation fault (core dumped)
 
-  One crude solution: ``rm /path/to/libbulletrave.so``. OpenRAVE uses ODE rather than Bullet by default, so there's no harm in removing the bullet plugin.
+  This is due to a name collision between a system installation of bullet and the local version in trajopt. One crude solution: ``rm /path/to/libbulletrave.so``. OpenRAVE uses ODE rather than Bullet by default, so there's no harm in removing the bullet plugin.
 
 * *All the python tests fail*. You probably need to set your ``PYTHONPATH``
 

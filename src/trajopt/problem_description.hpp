@@ -270,11 +270,21 @@ struct JointVelCostInfo : public CostInfo {
 /**
 \brief %Collision penalty
 
+Distrete-time penalty:
 \f{align*}{
   cost = \sum_{t=0}^{T-1} \sum_{A, B} | distpen_t - sd(A,B) |^+
 \f}
+
+Continuous-time penalty: same, except you consider swept-out shaps of robot links. Currently self-collisions are not included.
+
 */
 struct CollisionCostInfo : public CostInfo {
+  /*
+   Note: this is an atypical cost, because you can instantiate it with two different cost types: "collision" and "continuous_collision"
+   I should have made "continuous" a parameter, but I'm keeping it this way for backwards compatibility.
+   */
+  /// first_step and last_step are inclusive
+  int first_step, last_step;
   /// coeffs.size() = num_timesteps
   DblVec coeffs;
   /// safety margin: contacts with distance < dist_pen are penalized
@@ -282,32 +292,15 @@ struct CollisionCostInfo : public CostInfo {
   std::vector<Str2Dbl> tag2coeffs;
   std::vector<Str2Dbl> tag2dist_pen;
   bool use_same_cost;
+  bool continuous;
+  CollisionCostInfo(bool _continuous) : continuous(_continuous) {}
   void fromJson(const Value& v);
   void hatch(TrajOptProb& prob);
-  static CostInfoPtr create();
+  static CostInfoPtr create_discrete();
+  static CostInfoPtr create_continuous();
 };
 
-/**
-\brief continuous-time collision penalty
 
-\f{align*}{
-  cost = \sum_{t=firststep}^{laststep} \sum_{A \in robot,B} | distpen_t - sd(hull(A(t), A(t+1)),B) |^+
-\f}
-*/
-struct ContinuousCollisionCostInfo : public CostInfo {
-  /// first_step and last_step are inclusive
-  int first_step, last_step;
-  /// coeffs.size() = last_step - first_step - 1
-  DblVec coeffs;
-  /// see CollisionCostInfo::dist_pen
-  DblVec dist_pen;
-  std::vector<Str2Dbl> tag2coeffs;
-  std::vector<Str2Dbl> tag2dist_pen;
-  bool use_same_cost;
-  void fromJson(const Value& v);
-  void hatch(TrajOptProb& prob);
-  static CostInfoPtr create();
-};
 /**
 joint-space position constraint
  */

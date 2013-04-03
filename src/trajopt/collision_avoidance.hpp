@@ -108,8 +108,10 @@ class CollisionCost : public Cost, public Plotter {
 public:
   /* constructor for single timestep */
   CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
+  CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
   /* constructor for cast cost */
   CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
+  CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
   virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model);
   virtual double value(const vector<double>&);
   virtual void Plot(const DblVec& x, OR::EnvironmentBase&, std::vector<OR::GraphHandlePtr>& handles);
@@ -117,19 +119,10 @@ private:
   CollisionEvaluatorPtr m_calc;
   double m_dist_pen;
   double m_coeff;
-};
-
-class CollisionTaggedCost : public Cost, public Plotter {
-public:
-  CollisionTaggedCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
-  CollisionTaggedCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
-  virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model);
-  virtual double value(const vector<double>&);
-  virtual void Plot(const DblVec& x, OR::EnvironmentBase&, std::vector<OR::GraphHandlePtr>& handles);
-private:
-  CollisionEvaluatorPtr m_calc;
+  // only used for the tagged version
   Str2Dbl m_tag2dist_pen;
   Str2Dbl m_tag2coeff;
+  bool m_tagged;
 };
 
 }
