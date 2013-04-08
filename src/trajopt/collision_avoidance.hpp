@@ -26,7 +26,9 @@ private:
 typedef boost::shared_ptr<SceneStateSetter> SceneStateSetterPtr;
 
 
-struct CollisionEvaluator {
+struct CollisionEvaluator;
+typedef boost::shared_ptr<CollisionEvaluator> CollisionEvaluatorPtr;
+struct CollisionEvaluator : public OR::UserData {
   virtual void CalcDistExpressions(const DblVec& x, vector<AffExpr>& exprs, DblVec& weights, NamePairs& bodyNames) = 0;
   virtual void CalcDists(const DblVec& x, DblVec& exprs, DblVec& weights, NamePairs& bodyNames) = 0;
   virtual void CalcCollisions(const DblVec& x, vector<Collision>& collisions) = 0;
@@ -34,8 +36,10 @@ struct CollisionEvaluator {
   virtual ~CollisionEvaluator() {}
 
   Cache<double, vector<Collision>, 3> m_cache;
+
+  static CollisionEvaluatorPtr GetOrCreateSingleTimestep(int key, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
+  static CollisionEvaluatorPtr GetOrCreateCast(int key, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
 };
-typedef boost::shared_ptr<CollisionEvaluator> CollisionEvaluatorPtr;
 
 struct SingleTimestepCollisionEvaluator : public CollisionEvaluator {
 public:
@@ -107,11 +111,11 @@ public:
 class CollisionCost : public Cost, public Plotter {
 public:
   /* constructor for single timestep */
-  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
-  CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
+  CollisionCost(int t, double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
+  CollisionCost(int t, const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars);
   /* constructor for cast cost */
-  CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
-  CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
+  CollisionCost(int t, double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
+  CollisionCost(int t, const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1);
   virtual ConvexObjectivePtr convex(const vector<double>& x, Model* model);
   virtual double value(const vector<double>&);
   virtual void Plot(const DblVec& x, OR::EnvironmentBase&, std::vector<OR::GraphHandlePtr>& handles);

@@ -526,9 +526,9 @@ void CollisionCostInfo::hatch(TrajOptProb& prob) {
     for (int i=first_step; i < last_step; ++i) {
       CostPtr cost;
       if (use_same_cost) {
-        cost.reset(new CollisionCost(dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i), prob.GetVarRow(i+1)));
+        cost.reset(new CollisionCost(i, dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i), prob.GetVarRow(i+1)));
       } else {
-        cost.reset(new CollisionCost(tag2dist_pen[i-first_step], tag2coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i), prob.GetVarRow(i+1)));
+        cost.reset(new CollisionCost(i, tag2dist_pen[i-first_step], tag2coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i), prob.GetVarRow(i+1)));
       }
       prob.addCost(cost);
       cost->setName( (boost::format("%s_%i")%name%i).str() );
@@ -538,9 +538,9 @@ void CollisionCostInfo::hatch(TrajOptProb& prob) {
     for (int i=first_step; i <= last_step; ++i) {
       CostPtr cost;
       if (use_same_cost) {
-        cost.reset(new CollisionCost(dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i)));
+        cost.reset(new CollisionCost(i, dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i)));
       } else {
-        cost.reset(new CollisionCost(tag2dist_pen[i-first_step], tag2coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i)));
+        cost.reset(new CollisionCost(i, tag2dist_pen[i-first_step], tag2coeffs[i-first_step], prob.GetRAD(), prob.GetSceneState(i), prob.GetVarRow(i)));
       }
       prob.addCost(cost);
       cost->setName( (boost::format("%s_%i")%name%i).str() );

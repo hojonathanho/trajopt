@@ -30,6 +30,61 @@ SceneStateSetter::~SceneStateSetter() {
   }
 }
 
+#if 0
+class CachedCollisionChecker;
+typedef boost::shared_ptr<CachedCollisionChecker> CachedCollisionCheckerPtr;
+class CachedCollisionChecker : public CollisionChecker {
+public:
+  enum CheckType {
+    ALL_VS_ALL=0, LINK_VS_ALL, LINKS_VS_ALL, CAST_VS_ALL
+  };
+  struct Key {
+    CheckType type;
+    int timestep;
+    double hash;
+    Key(CheckType type_, int timestep_, double hash_) : type(type_), timestep(timestep_), hash(hash_) { }
+  };
+
+  static CachedCollisionCheckerPtr GetOrCreate(OR::EnvironmentBase& env) {
+    // FIXME
+    CachedCollisionCheckerPtr out(new CachedCollisionChecker);
+    CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(env);
+    return out;
+  }
+
+  virtual ~CachedCollisionChecker() { }
+
+  virtual void AllVsAll(vector<Collision>& collisions) { m_cc->AllVsAll(collisions); }
+  virtual void LinkVsAll(const KinBody::Link& link, vector<Collision>& collisions) { m_cc->LinkVsAll(link, collisions); }
+  virtual void LinksVsAll(const vector<KinBody::LinkPtr>& links, vector<Collision>& collisions) { m_cc->LinksVsAll(links, collisions); }
+  virtual void CastVsAll(RobotAndDOF& rad, const vector<KinBody::LinkPtr>& links, const DblVec& startjoints, const DblVec& endjoints, vector<Collision>& collisions) { m_cc->CastVsAll(rad, links, startjoints, endjoints, collisions); }
+
+  virtual void SetContactDistance(float distance) { m_cc->SetContactDistance(distance); }
+  virtual double GetContactDistance() { return m_cc->GetContactDistance(); }
+  virtual void PlotCollisionGeometry(vector<OpenRAVE::GraphHandlePtr>& h) { m_cc->PlotCollisionGeometry(h); }
+  virtual void ContinuousCheckTrajectory(const TrajArray& traj, RobotAndDOF& rad, vector<Collision>& collisions) { m_cc->ContinuousCheckTrajectory(traj, rad, collisions); }
+  virtual void ExcludeCollisionPair(const KinBody::Link& link0, const KinBody::Link& link1) { m_cc->ExcludeCollisionPair(link0, link1); }
+
+  void GetCached(const DblVec& x, vector<Collision>& collisions) {
+    Key key = hash(x);
+    vector<Collision>* it = m_cache.get(key);
+    if (it != NULL) {
+      RAVELOG_DEBUG("using cached collision check\n");
+      collisions = *it;
+    }
+    else {
+      RAVELOG_DEBUG("not using cached collision check\n");
+      CalcCollisions(x, collisions);
+      m_cache.put(key, collisions);
+    }
+  }
+
+private:
+  Cache<Key, vector<Collision>, -1> m_cache;
+  CollisionCheckerPtr m_cc;
+};
+#endif
+
 
 void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& m_link2ind,
     DblVec& dists, DblVec& weights, NamePairs& bodyNames) {
@@ -37,8 +92,11 @@ void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& 
   // since we're using LinksVsAll
   dists.clear();
   weights.clear();
+  bodyNames.clear();
   dists.reserve(collisions.size());
   weights.reserve(collisions.size());
+  bodyNames.reserve(collisions.size());
+
   BOOST_FOREACH(const Collision& col, collisions) {
     Link2Int::const_iterator itA = m_link2ind.find(col.linkA);
     Link2Int::const_iterator itB = m_link2ind.find(col.linkB);
@@ -85,6 +143,133 @@ void CollisionsToDistanceExpressions(const vector<Collision>& collisions, RobotA
   RAVELOG_DEBUG("%i distance expressions\n", exprs.size());
 }
 
+#if 0
+void CollisionsToLocalContactPoints(const vector<Collision>& collisions, const Link2Int& m_link2ind, vector<OR::Vector>& points, DblVec& weights, NamePairs& body_names) {
+  points.clear();
+  weights.clear();
+  bodyNames.clear();
+  points.reserve(collisions.size());
+  weights.reserve(collisions.size());
+  bodyNames.reserve(collisions.size());
+
+  BOOST_FOREACH(const Collision& col, collisions) {
+    Link2Int::const_iterator itA = m_link2ind.find(col.linkA);
+    Link2Int::const_iterator itB = m_link2ind.find(col.linkB);
+    if (itA != m_link2ind.end() || itB != m_link2ind.end()) {
+      if (itA != m_link2ind.end()) {
+        points.push_back(col.linkB->GetTransform().inverse() * col.ptB);
+      } else if (itB != m_link2ind.end()) {
+        points.push_back(col.linkA->GetTransform().inverse() * col.ptA);
+      }
+      weights.push_back(col.weight);
+      bodyNames.push_back(pair<string, string>(col.linkA->GetParent()->GetName(), col.linkB->GetParent()->GetName()));
+    }
+  }
+}
+
+void CollisionsToLocalContactPointExpressions(
+    const vector<Collision>& collisions, RobotAndDOF& rad, SceneStateInfoPtr scene_state,
+    const Link2Int& link2ind, const VarVector& vars, const DblVec& dofvals,
+    vector<AffExpr>& exprs_x, vector<AffExpr>& exprs_y, vector<AffExpr>& exprs_z, DblVec& weights, NamePairs& body_names) {
+
+  exprs_x.clear(); exprs_y.clear(); exprs_z.clear();
+  weights.clear();
+  exprs_x.reserve(collisions.size()); exprs_y.reserve(collisions.size()); exprs_z.reserve(collisions.size());
+  weights.reserve(collisions.size());
+
+  SceneStateSetterPtr state_setter;
+  if (scene_state) state_setter.reset(new SceneStateSetter(rad.GetRobot()->GetEnv(), scene_state));
+  rad.SetDOFValues(dofvals); // since we'll be calculating jacobians
+
+  BOOST_FOREACH(const Collision& col, collisions) {
+    AffExpr point[3];
+    Vector3d normal = toVector3d(col.normalB2A);
+
+    Link2Int::const_iterator itA = link2ind.find(col.linkA);
+    Link2Int::const_iterator itB = link2ind.find(col.linkB);
+    if (itA != link2ind.end()) {
+      Matrix3d proj_jac = Matrix3d::Identity() - normal*normal.transpose();
+      for (int i = 0; i < 3; ++i) {
+        VectorXd coord_grad = proj_jac.row(i)*rad.PositionJacobian(itA->second, col.ptA);
+        exprInc(point[i], varDot(coord_grad, vars));
+        exprInc(point[i], -coord_grad.dot(toVectorXd(dofvals)));
+      }
+    } else if (itB != link2ind.end()) {
+      Matrix3d proj_jac = Matrix3d::Identity() + normal*normal.transpose();
+      for (int i = 0; i < 3; ++i) {
+        VectorXd coord_grad = proj_jac.row(i)*rad.PositionJacobian(itB->second, col.ptB);
+        exprInc(point[i], varDot(coord_grad, vars));
+        exprInc(point[i], -coord_grad.dot(toVectorXd(dofvals)));
+      }
+    }
+
+    if (itA != link2ind.end() || itB != link2ind.end()) {
+      exprs_x.push_back(point[0]); exprs_y.push_back(point[1]); exprs_z.push_back(point[2]);
+      weights.push_back(col.weight);
+      body_names.push_back(pair<string, string>(col.linkA->GetParent()->GetName(), col.linkB->GetParent()->GetName()));
+    }
+  }
+}
+
+double logistic(double x);
+  return 1. / (1. + exp(-x));
+}
+
+void CollisionsToContactHeightCostExpressions(
+    const vector<Collision>& collisions, RobotAndDOF& rad, SceneStateInfoPtr scene_state,
+    const Link2Int& link2ind, const VarVector& vars, const DblVec& dofvals,
+    vector<AffExpr>& exprs, DblVec& weights, NamePairs& body_names) {
+
+  exprs.clear();
+  weights.clear();
+  exprs.reserve(collisions.size());
+  weights.reserve(collisions.size());
+
+  vector<AffExpr> points_x, points_y, points_z;
+  // TODO: these weights are right?
+  CollisionsToLocalContactPointExpressions(collisions, rad, scene_state, link2ind, vars, dofvals, points_x, points_y, points_z, weights, body_names);
+
+  // only put cost on z value
+  double cost0 = logistic(q.dot(Vector3d::UnitZ()));
+  Vector3d cost_grad = exp(-q.dot(Vector3d::UnitZ()))*cost0*cost0 * Vector3d::UnitZ();
+
+  for (int idx = 0; idx < points_z.size(); ++idx) {
+    points_z[idx]
+
+    AffExpr cost;
+  }
+
+
+    AffExpr point[3];
+    Vector3d normal = toVector3d(col.normalB2A);
+
+    Link2Int::const_iterator itA = link2ind.find(col.linkA);
+    Link2Int::const_iterator itB = link2ind.find(col.linkB);
+    if (itA != link2ind.end()) {
+      Matrix3d proj_jac = Matrix3d::Identity() - normal*normal.transpose();
+      for (int i = 0; i < 3; ++i) {
+        VectorXd coord_grad = proj_jac.row(i)*rad.PositionJacobian(itA->second, col.ptA);
+        exprInc(point[i], varDot(coord_grad, vars));
+        exprInc(point[i], -coord_grad.dot(toVectorXd(dofvals)));
+      }
+    } else if (itB != link2ind.end()) {
+      Matrix3d proj_jac = Matrix3d::Identity() + normal*normal.transpose();
+      for (int i = 0; i < 3; ++i) {
+        VectorXd coord_grad = proj_jac.row(i)*rad.PositionJacobian(itB->second, col.ptB);
+        exprInc(point[i], varDot(coord_grad, vars));
+        exprInc(point[i], -coord_grad.dot(toVectorXd(dofvals)));
+      }
+    }
+
+    if (itA != link2ind.end() || itB != link2ind.end()) {
+      exprs_x.push_back(point[0]); exprs_y.push_back(point[1]); exprs_z.push_back(point[2]);
+      weights.push_back(col.weight);
+      body_names.push_back(pair<string, string>(col.linkA->GetParent()->GetName(), col.linkB->GetParent()->GetName()));
+    }
+  }
+}
+#endif
+
 void CollisionsToDistanceExpressions(const vector<Collision>& collisions, RobotAndDOF& rad, SceneStateInfoPtr scene_state, const Link2Int& link2ind,
     const VarVector& vars0, const VarVector& vars1, const DblVec& vals0, const DblVec& vals1,
     vector<AffExpr>& exprs, DblVec& weights, NamePairs& bodyNames) {
@@ -118,6 +303,34 @@ void CollisionEvaluator::GetCollisionsCached(const DblVec& x, vector<Collision>&
     CalcCollisions(x, collisions);
     m_cache.put(key, collisions);
   }
+}
+
+CollisionEvaluatorPtr CollisionEvaluator::GetOrCreateSingleTimestep(int key, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) {
+  OR::EnvironmentBase& env = *rad->GetRobot()->GetEnv();
+  string name = (boost::format("trajopt_collision_evaluator_single_timestep_%d") % key).str();
+  UserDataPtr ud = GetUserData(env, name);
+  if (!ud) {
+    RAVELOG_DEBUG("creating single-timestep collision evaluator for environment (key=%d)", key);
+    ud.reset(new SingleTimestepCollisionEvaluator(rad, scene_state, vars));
+    SetUserData(env, name, ud);
+  } else {
+    RAVELOG_DEBUG("already have a single-timestep collision evaluator for environment (key=%d)", key);
+  }
+  return boost::dynamic_pointer_cast<CollisionEvaluator>(ud);
+}
+
+CollisionEvaluatorPtr CollisionEvaluator::GetOrCreateCast(int key, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) {
+  OR::EnvironmentBase& env = *rad->GetRobot()->GetEnv();
+  string name = (boost::format("trajopt_collision_evaluator_cast_%d") % key).str();
+  UserDataPtr ud = GetUserData(env, name);
+  if (!ud) {
+    RAVELOG_DEBUG("creating cast collision evaluator for environment (key=%d)", key);
+    ud.reset(new CastCollisionEvaluator(rad, scene_state, vars0, vars1));
+    SetUserData(env, name, ud);
+  } else {
+    RAVELOG_DEBUG("already have a cast collision evaluator for environment (key=%d)", key);
+  }
+  return boost::dynamic_pointer_cast<CollisionEvaluator>(ud);
 }
 
 SingleTimestepCollisionEvaluator::SingleTimestepCollisionEvaluator(RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
@@ -230,29 +443,33 @@ void PlotCollisions(const std::vector<Collision>& collisions, OR::EnvironmentBas
   }
 }
 
-CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
+CollisionCost::CollisionCost(int t, double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
     Cost("collision"),
     m_tagged(false),
-    m_calc(new SingleTimestepCollisionEvaluator(rad, scene_state, vars)), m_dist_pen(dist_pen), m_coeff(coeff)
+    m_calc(CollisionEvaluator::GetOrCreateSingleTimestep(t, rad, scene_state, vars)),
+    m_dist_pen(dist_pen), m_coeff(coeff)
 {}
 
-CollisionCost::CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
+CollisionCost::CollisionCost(int t, const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars) :
     Cost("tagged_collision"),
     m_tagged(true),
-    m_calc(new SingleTimestepCollisionEvaluator(rad, scene_state, vars)), m_tag2dist_pen(tag2dist_pen), m_tag2coeff(tag2coeff)
+    m_calc(CollisionEvaluator::GetOrCreateSingleTimestep(t, rad, scene_state, vars)),
+    m_tag2dist_pen(tag2dist_pen), m_tag2coeff(tag2coeff)
 {}
 
 
-CollisionCost::CollisionCost(double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
+CollisionCost::CollisionCost(int t, double dist_pen, double coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
     Cost("cast_collision"),
     m_tagged(false),
-    m_calc(new CastCollisionEvaluator(rad, scene_state, vars0, vars1)), m_dist_pen(dist_pen), m_coeff(coeff)
+    m_calc(CollisionEvaluator::GetOrCreateCast(t, rad, scene_state, vars0, vars1)),
+    m_dist_pen(dist_pen), m_coeff(coeff)
 {}
 
-CollisionCost::CollisionCost(const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
+CollisionCost::CollisionCost(int t, const Str2Dbl& tag2dist_pen, const Str2Dbl& tag2coeff, RobotAndDOFPtr rad, SceneStateInfoPtr scene_state, const VarVector& vars0, const VarVector& vars1) :
     Cost("tagged_cast_collision"),
     m_tagged(true),
-    m_calc(new CastCollisionEvaluator(rad, scene_state, vars0, vars1)), m_tag2dist_pen(tag2dist_pen), m_tag2coeff(tag2coeff)
+    m_calc(CollisionEvaluator::GetOrCreateCast(t, rad, scene_state, vars0, vars1)),
+    m_tag2dist_pen(tag2dist_pen), m_tag2coeff(tag2coeff)
 {}
 
 
