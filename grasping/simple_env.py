@@ -8,14 +8,17 @@ def mirror_arm_joints(x):
     "mirror image of joints (r->l or l->r)"
     return np.r_[-x[0],x[1],-x[2],x[3],-x[4],x[5],-x[6]]
 
-def create():
+def create_bare():
   env = rave.Environment()
   env.StopSimulation()
   env.Load('../data/pr2_table.env.xml')
-
   pr2 = env.GetRobot('pr2')
   pr2.SetDOFValues(PR2_LARM_SIDE_POSTURE, pr2.GetManipulator('leftarm').GetArmIndices())
   pr2.SetDOFValues(mirror_arm_joints(PR2_LARM_SIDE_POSTURE), pr2.GetManipulator('rightarm').GetArmIndices())
+  return env
+
+def create():
+  env = create_bare()
 
   table = env.GetKinBody('table')
 
@@ -39,13 +42,7 @@ def create():
   return env
 
 def create_topple_env():
-  env = rave.Environment()
-  env.StopSimulation()
-  env.Load('../data/pr2_table.env.xml')
-
-  pr2 = env.GetRobot('pr2')
-  pr2.SetDOFValues(PR2_LARM_SIDE_POSTURE, pr2.GetManipulator('leftarm').GetArmIndices())
-  pr2.SetDOFValues(mirror_arm_joints(PR2_LARM_SIDE_POSTURE), pr2.GetManipulator('rightarm').GetArmIndices())
+  env = create_bare()
 
   table = env.GetKinBody('table')
 

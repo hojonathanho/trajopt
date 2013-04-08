@@ -96,6 +96,25 @@ def linearize_objs(p, env, traj0, dynamic_obj_names):
 
   return SceneLinearization(traj0.copy(), name2trajs, jacs)
 
+
+def calc_jacobian_nd(f, x0, eps=1e-4):
+  n, y0 = len(x0), f(x0)
+  jac = np.empty((len(y0), n))
+  dxs = eps*np.eye(n)
+  for i, dx in enumerate(dxs):
+    yplus, ymin = f(x0 + dx), f(x0 - dx)
+    jac[:,i] = (yplus - ymin) / (2.*eps)
+  return jac
+  
+def linearize_objs_numdiff(p, env, traj0, dynamic_obj_names):
+  timesteps = len(traj0)
+  num_joints = traj0.shape[1]
+  eps = 1e-2
+  djoints = eps*np.eye(num_joints)
+
+  jacs = defaultdict(dict)
+
+
 def linearize_objs_numdiff(p, env, traj0, dynamic_obj_names):
   # this is pretty fucking bad (O(len(traj)^2))
   # seems to give bad results too

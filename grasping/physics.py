@@ -32,7 +32,7 @@ def record_sim(bullet_env, bullet_rec_objs, n_timesteps, dt=0.01, max_substeps=1
 
   return out
 
-def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_time, bullet_env, bullet_rec_objs, dt=0.01, extra_steps=0, **kwargs):
+def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_time, bullet_env, bullet_rec_objs, dt=0.01, extra_steps=0, prestep_fn=None, return_inds_of_orig=False, **kwargs):
   assert 'n_timesteps' not in kwargs
 
   rave_env = bullet_env.GetRaveEnv()
@@ -51,6 +51,8 @@ def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_tim
     expanded_extra_steps = int(extra_steps * float(expanded_traj_len)/float(orig_traj_len))
 
   def prestep(t):
+    if prestep_fn is not None:
+      prestep_fn(t)
     if t < len(expanded_traj):
       robot.SetActiveDOFValues(expanded_traj[t,:])
       bullet_robot.UpdateBullet()
@@ -63,4 +65,37 @@ def record_sim_with_traj(robot_name, dof_inds, affine_dofs, traj, traj_total_tim
     assert expanded_out[expanded_i]['timestep'] == expanded_i
     out.append({"timestep": i, "obj_states": expanded_out[expanded_i]["obj_states"]})
   assert len(out) == orig_traj_len + extra_steps
+  if return_inds_of_orig:
+    return out, inds_of_orig
   return out
+
+
+class BulletObjectStateSaver(object):
+  def __init__(self, bt_obj):
+    self.bt_obj = bt_obj
+
+  def restore(self):
+    pass
+
+  def __enter__(self):
+    return self.bt_obj
+
+  def __exit__(self, type, value, traceback):
+    self.restore()
+
+class BulletEnvStateSaver(object):
+  def __init__(self, bt_env):
+    self.bt_env = bt_env
+    # TODO: only save non-kinematic?
+    self.savers = [BulletObjectStateSaver(o) for o in bt_env.GetObjects()]
+
+  def restore(self):
+    for s in self.savers:
+      s.restore()
+
+  def __enter__(self):
+    return self.bt_env
+
+  def __exit__(self, type, value, traceback):
+    self.restore()
+
