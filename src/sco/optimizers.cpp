@@ -133,9 +133,17 @@ vector<ConvexObjectivePtr> cntsToCosts(const vector<ConvexConstraintsPtr>& cnts,
 void Optimizer::addCallback(const Callback& cb) {
   callbacks_.push_back(cb);
 }
+void Optimizer::addPreEvaluateCallback(const Callback& cb) {
+  pre_eval_callbacks_.push_back(cb);
+}
 void Optimizer::callCallbacks(DblVec& x) {
   for (int i=0; i < callbacks_.size(); ++i) {
     callbacks_[i](prob_.get(), x);
+  }
+}
+void Optimizer::callPreEvaluateCallbacks(DblVec& x) {
+  for (int i=0; i < pre_eval_callbacks_.size(); ++i) {
+    pre_eval_callbacks_[i](prob_.get(), x);
   }
 }
 
@@ -245,12 +253,14 @@ OptStatus BasicTrustRegionSQP::optimize() {
 
       // speedup: if you just evaluated the cost when doing the line search, use that
       if (results_.cost_vals.empty()) { //only happens on the first iteration
+        callPreEvaluateCallbacks(x_);
         results_.cnt_viols = evaluateConstraintViols(constraints, x_);
         results_.cost_vals = evaluateCosts(prob_->getCosts(), x_);
         assert(results_.n_func_evals == 0);
         ++results_.n_func_evals;
       }
 
+      callPreEvaluateCallbacks(x_);
       vector<ConvexObjectivePtr> cost_models = convexifyCosts(prob_->getCosts(),x_, model_.get());
       vector<ConvexConstraintsPtr> cnt_models = convexifyConstraints(constraints, x_, model_.get());
       vector<ConvexObjectivePtr> cnt_cost_models = cntsToCosts(cnt_models, merit_error_coeff_, model_.get());
@@ -298,6 +308,7 @@ OptStatus BasicTrustRegionSQP::optimize() {
           LOG_DEBUG("SHOULD BE THE SAME: %.2f*%s ?= %s", merit_error_coeff_, CSTR(model_cnt_viols), CSTR(model_cnt_viols2));
         }
 
+        callPreEvaluateCallbacks(new_x);
         DblVec new_cost_vals = evaluateCosts(prob_->getCosts(), new_x);
         DblVec new_cnt_viols = evaluateConstraintViols(constraints, new_x);
         ++results_.n_func_evals;

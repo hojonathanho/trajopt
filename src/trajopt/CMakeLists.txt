@@ -4,6 +4,7 @@ include_directories(
   ${Eigen_INCLUDE_DIRS}
   ${OpenRAVE_INCLUDE_DIRS}
   ${JSON_INCLUDE_DIRS}
+  ${BULLETSIM_INCLUDE_DIRS}
 )
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations -fvisibility=hidden")
 
@@ -19,6 +20,7 @@ add_library(trajopt
 	collision_checker.cpp
 	plot_callback.cpp
 	bullet_unity.cpp
+  scene_objectives.cpp
 )
 target_link_libraries(trajopt ${OpenRAVE_BOTH_LIBRARIES} ${Boost_SYSTEM_LIBRARY} sco utils json osgviewer)
 

@@ -26,6 +26,7 @@ typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> D
 
 typedef vector<double> DblVec;
 typedef vector<int> IntVec;
+typedef vector<string> StrVec;
 
 using Eigen::Vector3d;
 using Eigen::Vector4d;

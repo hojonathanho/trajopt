@@ -30,61 +30,6 @@ SceneStateSetter::~SceneStateSetter() {
   }
 }
 
-#if 0
-class CachedCollisionChecker;
-typedef boost::shared_ptr<CachedCollisionChecker> CachedCollisionCheckerPtr;
-class CachedCollisionChecker : public CollisionChecker {
-public:
-  enum CheckType {
-    ALL_VS_ALL=0, LINK_VS_ALL, LINKS_VS_ALL, CAST_VS_ALL
-  };
-  struct Key {
-    CheckType type;
-    int timestep;
-    double hash;
-    Key(CheckType type_, int timestep_, double hash_) : type(type_), timestep(timestep_), hash(hash_) { }
-  };
-
-  static CachedCollisionCheckerPtr GetOrCreate(OR::EnvironmentBase& env) {
-    // FIXME
-    CachedCollisionCheckerPtr out(new CachedCollisionChecker);
-    CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(env);
-    return out;
-  }
-
-  virtual ~CachedCollisionChecker() { }
-
-  virtual void AllVsAll(vector<Collision>& collisions) { m_cc->AllVsAll(collisions); }
-  virtual void LinkVsAll(const KinBody::Link& link, vector<Collision>& collisions) { m_cc->LinkVsAll(link, collisions); }
-  virtual void LinksVsAll(const vector<KinBody::LinkPtr>& links, vector<Collision>& collisions) { m_cc->LinksVsAll(links, collisions); }
-  virtual void CastVsAll(RobotAndDOF& rad, const vector<KinBody::LinkPtr>& links, const DblVec& startjoints, const DblVec& endjoints, vector<Collision>& collisions) { m_cc->CastVsAll(rad, links, startjoints, endjoints, collisions); }
-
-  virtual void SetContactDistance(float distance) { m_cc->SetContactDistance(distance); }
-  virtual double GetContactDistance() { return m_cc->GetContactDistance(); }
-  virtual void PlotCollisionGeometry(vector<OpenRAVE::GraphHandlePtr>& h) { m_cc->PlotCollisionGeometry(h); }
-  virtual void ContinuousCheckTrajectory(const TrajArray& traj, RobotAndDOF& rad, vector<Collision>& collisions) { m_cc->ContinuousCheckTrajectory(traj, rad, collisions); }
-  virtual void ExcludeCollisionPair(const KinBody::Link& link0, const KinBody::Link& link1) { m_cc->ExcludeCollisionPair(link0, link1); }
-
-  void GetCached(const DblVec& x, vector<Collision>& collisions) {
-    Key key = hash(x);
-    vector<Collision>* it = m_cache.get(key);
-    if (it != NULL) {
-      RAVELOG_DEBUG("using cached collision check\n");
-      collisions = *it;
-    }
-    else {
-      RAVELOG_DEBUG("not using cached collision check\n");
-      CalcCollisions(x, collisions);
-      m_cache.put(key, collisions);
-    }
-  }
-
-private:
-  Cache<Key, vector<Collision>, -1> m_cache;
-  CollisionCheckerPtr m_cc;
-};
-#endif
-
 
 void CollisionsToDistances(const vector<Collision>& collisions, const Link2Int& m_link2ind,
     DblVec& dists, DblVec& weights, NamePairs& bodyNames) {

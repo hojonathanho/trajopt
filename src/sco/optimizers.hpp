@@ -64,9 +64,11 @@ public:
 
   typedef boost::function<void(OptProb*, DblVec&)> Callback;
   void addCallback(const Callback& f); // called before each iteration
+  void addPreEvaluateCallback(const Callback& f); // called before objective evaluations and convexifications
 protected:
-  vector<Callback> callbacks_;
+  vector<Callback> callbacks_, pre_eval_callbacks_;
   void callCallbacks(DblVec& x);
+  void callPreEvaluateCallbacks(DblVec& x);
   OptProbPtr prob_;
   OptResults results_;
 };

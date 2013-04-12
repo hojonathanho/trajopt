@@ -13,15 +13,39 @@ def robot_position_jac(manip, link_ind, joints0, pt):
     jac = robot.CalculateActiveJacobian(link_ind, pt)
   return jac
 
+def pospart(x):
+  return max(0, x)
 
-def predict_obj_pos(manip, pos0, joints0, contact0, pos, joints):
+def linearize_posdiff(manip, joints0_0, joints0_1, contact0_0, contact0_1):
+  assert contact0_0.linkA.GetParent().GetName() == 'pr2' and contact0_1.linkA.GetParent().GetName() == 'pr2'
+  assert contact0_0.linkA == contact0_1.linkA
+  assert contact0_0.linkB == contact0_1.linkB
+  #assert contact0_0.linkA.GetName() == contact0_1.linkA.GetName()
+  #assert contact0_0.linkB.GetParent().GetName() == contact0_1.linkB.GetParent().GetName()
+  #assert contact0_0.linkB.GetName() == contact0_1.linkB.GetName()
+
+  alpha = 1 # FIXME
+  contact_link = contact0_0.linkA
+  jac_0 = robot_position_jac(manip, contact_link.GetIndex(), joints0_0, contact0_0.ptA)
+  jac_1 = robot_position_jac(manip, contact_link.GetIndex(), joints0_1, contact0_1.ptA)
+  n_0 = -contact0.normalB2A.reshape((3, 1))
+
+  def fn(joints_0, joints_1):
+    p_1 = contact0_1.ptA + jac_1.dot(joints_1 - joints0_1)
+    p_0 = contact0_0.ptA + jac_0.dot(joints_0 - joints0_0)
+    return alpha * n * pospart(p_1 - p_0)
+
+  return fn
+
+
+def predict_obj_posdiff(manip, pos0, joints0, contact0, pos, joints):
   #proj = contact0.n[:,None].dot(contact0.n[None,:])
 
   alpha = 1 # FIXME
-
   jac = robot_position_jac(manip, contact0.linkA.GetIndex(), joints0, pos0)
+  n = -contact0.normalB2A.reshape((3, 1))
 
-  n = contact0.normalB2A.reshape((3, 1))
+
 
   d_from_joints = -alpha*n * max(0, -n.T.dot(jac).dot(joints - joints0)) # TODO: -max(0, contact0.d)
 

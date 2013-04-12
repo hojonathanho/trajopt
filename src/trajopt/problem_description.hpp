@@ -60,12 +60,16 @@ public:
   vector<SceneStateInfoPtr>& GetSceneStates() {return m_scene_states;}
   SceneStateInfoPtr GetSceneState(int i) {return m_scene_states.size() == 0 ? SceneStateInfoPtr() : m_scene_states[i];}
 
+  void SetDynamicObjects(const StrVec& v) {m_dynamic_objects = v;}
+  const StrVec& GetDynamicObjects() const {return m_dynamic_objects;}
+
   friend TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo&);
 private:
   VarArray m_traj_vars;
   RobotAndDOFPtr m_rad;
   TrajArray m_init_traj;
   vector<SceneStateInfoPtr> m_scene_states;
+  StrVec m_dynamic_objects;
   typedef std::pair<string,string> StringPair;
 };
 
@@ -82,6 +86,7 @@ struct BasicInfo  {
   string manip;
   string robot; // optional
   IntVec dofs_fixed; // optional
+  StrVec dynamic_objects; // optional
   void fromJson(const Json::Value& v);
 };
 
@@ -117,6 +122,7 @@ struct SceneStateInfo {
   void fromJson(const Json::Value& v);
 };
 void fromJson(const Json::Value& v, SceneStateInfoPtr&);
+
 
 /**
 When cost element of JSON doc is read, one of these guys gets constructed to hold the parameters.
@@ -300,6 +306,34 @@ struct CollisionCostInfo : public CostInfo {
   static CostInfoPtr create_continuous();
 };
 
+#if 0
+/**
+ * Dynamic object cost: toppling angle
+ */
+struct ObjectToppleCostInfo : public CostInfo {
+  int first_step, last_step;
+
+  ObjectToppleCostInfo() { }
+
+  void fromJson(const Value& v);
+  void hatch(TrajOptProb& prob);
+  static CostInfoPtr create();
+};
+#endif
+
+/**
+ * Dynamic object cost: Movement of center of mass
+ */
+struct ObjectSlideCostInfo : public CostInfo {
+  string object_name;
+  int first_step, last_step;
+  DblVec coeffs;
+  DblVec dist_pen;
+
+  void fromJson(const Value& v);
+  void hatch(TrajOptProb& prob);
+  static CostInfoPtr create();
+};
 
 /**
 joint-space position constraint

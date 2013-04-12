@@ -5,9 +5,9 @@
 #include "sco/expr_ops.hpp"
 #include "trajopt/kinematic_constraints.hpp"
 #include "trajopt/collision_avoidance.hpp"
-#include "trajopt/rave_utils.hpp"
 #include "trajopt/plot_callback.hpp"
 #include "trajopt/rave_utils.hpp"
+#include "trajopt/scene_objectives.hpp"
 #include "utils/eigen_conversions.hpp"
 #include "utils/eigen_slicing.hpp"
 #include <boost/algorithm/string.hpp>
@@ -100,6 +100,7 @@ void BasicInfo::fromJson(const Json::Value& v) {
   childFromJson(v, manip, "manip");
   childFromJson(v, robot, "robot", string(""));
   childFromJson(v, dofs_fixed, "dofs_fixed", IntVec());
+  childFromJson(v, dynamic_objects, "dynamic_objects", StrVec());
 }
 
 
@@ -250,8 +251,13 @@ TrajOptResultPtr OptimizeProblem(TrajOptProbPtr prob, bool plot) {
   opt.max_iter_ = 40;
   opt.min_approx_improve_frac_ = .001;
   opt.merit_error_coeff_ = 20;
-  if (plot) opt.addCallback(PlotCallback(*prob));
-  //  opt.addCallback(boost::bind(&PlotCosts, boost::ref(prob->getCosts()),boost::ref(*prob->GetRAD()), boost::ref(prob->GetVars()), _1));
+  if (plot) {
+    opt.addCallback(PlotCallback(*prob));
+  }
+  if (!prob->GetDynamicObjects().empty()) {
+    SimulationPtr sim = Simulation::GetOrCreate(prob->GetRAD());
+    opt.addPreEvaluateCallback(sim->MakeCallback());
+  }
   opt.initialize(trajToDblVec(prob->GetInitTraj()));
   opt.optimize();
   return TrajOptResultPtr(new TrajOptResult(opt.results(), *prob));
@@ -299,6 +305,8 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
       }
     }
   }
+
+  prob->SetDynamicObjects(bi.dynamic_objects);
 
   prob->SetSceneStates(pci.scene_state_infos);
 
@@ -616,6 +624,65 @@ void SceneStateInfo::fromJson(const Json::Value& v) {
 void fromJson(const Json::Value& v, SceneStateInfoPtr& p) {
   p.reset(new SceneStateInfo);
   p->fromJson(v);
+}
+
+
+void ObjectSlideCostInfo::fromJson(const Value& v) {
+  FAIL_IF_FALSE(v.isMember("params"));
+  const Value& params = v["params"];
+
+  childFromJson(params, object_name, "object_name");
+
+  const StrVec& dynamic_objects = gPCI->basic_info.dynamic_objects;
+  if (std::find(dynamic_objects.begin(), dynamic_objects.end(), object_name) == dynamic_objects.end()) {
+    PRINT_AND_THROW(boost::format("can't place sliding cost on %s, which isn't declared as dynamic") % object_name);
+  }
+
+  int n_steps = gPCI->basic_info.n_steps;
+  childFromJson(params, first_step, "first_step", 0);
+  childFromJson(params, last_step, "last_step", n_steps-1);
+  FAIL_IF_FALSE((first_step >= 0) && (first_step < n_steps));
+  FAIL_IF_FALSE((last_step >= first_step) && (last_step < n_steps));
+  int n_terms = last_step - first_step + 1;
+
+  childFromJson(params, coeffs, "coeffs");
+  if (coeffs.size() == 1) coeffs = DblVec(n_terms, coeffs[0]);
+  else if (coeffs.size() != n_terms) {
+    PRINT_AND_THROW (boost::format("wrong size: coeffs. expected %i got %i")%n_terms%coeffs.size());
+  }
+  childFromJson(params, dist_pen,"dist_pen");
+  if (dist_pen.size() == 1) dist_pen = DblVec(n_terms, dist_pen[0]);
+  else if (dist_pen.size() != n_terms) {
+    PRINT_AND_THROW(boost::format("wrong size: dist_pen. expected %i got %i")%n_terms%dist_pen.size());
+  }
+}
+
+void ObjectSlideCostInfo::hatch(TrajOptProb& prob) {
+  for (int i=first_step; i <= last_step; ++i) {
+    CostPtr cost(new ObjectSlideCost(i, object_name, dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetVarRow(i), prob.GetVarRow(i+1)));
+    prob.addCost(cost);
+    cost->setName( (boost::format("%s_%i")%name%i).str() );
+  }
+
+/*
+  CollisionCheckerPtr cc = CollisionChecker::GetOrCreate(*prob.GetEnv());
+  if (use_same_cost) {
+    cc->SetContactDistance(*std::max_element(dist_pen.begin(), dist_pen.end()) + .04);
+  } else {
+    double max_dist_pen = 0;
+    for (int i = 0; i < tag2dist_pen.size(); ++i) {
+      for (Str2Dbl::iterator it = tag2dist_pen[i].begin(); it != tag2dist_pen[i].end(); ++it) {
+        if (it->second > max_dist_pen) {
+            max_dist_pen = it->second;
+        }
+      }
+    }
+    cc->SetContactDistance(max_dist_pen + .04);
+  }
+  */
+}
+CostInfoPtr ObjectSlideCostInfo::create() {
+  return CostInfoPtr(new ObjectSlideCostInfo);
 }
 
 
