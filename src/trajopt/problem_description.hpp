@@ -1,3 +1,5 @@
+#pragma once
+
 #include "trajopt/common.hpp"
 #include "json_marshal.hpp"
 #include <boost/function.hpp>

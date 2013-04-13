@@ -1,7 +1,9 @@
 #include "scene_objectives.hpp"
 
 #include "simulation/bulletsim_lite.h"
+#include "utils/eigen_conversions.hpp"
 #include "utils/interpolation.hpp"
+#include "rave_utils.hpp"
 
 namespace trajopt {
 
@@ -25,14 +27,31 @@ Vector4d toEigenQuat(const btQuaternion &q) {
   return Vector4d(q.w(), q.x(), q.y(), q.z());
 }
 
+vector<SceneStateInfoPtr> SimResult::ToSceneStateInfos() {
+  vector<SceneStateInfoPtr> out;
+  for (int t = 0; t < robot_traj.rows(); ++t) {
+    SceneStateInfoPtr info(new SceneStateInfo);
+    info->timestep = t;
+    for (Name2ObjectTraj::iterator i = obj_trajs.begin(); i != obj_trajs.end(); ++i) {
+      ObjectStateInfoPtr obj_info(new ObjectStateInfo);
+      obj_info->name = i->first;
+      obj_info->xyz = i->second->xyz.row(t);
+      obj_info->wxyz = i->second->wxyz.row(t);
+      info->obj_state_infos.push_back(obj_info);
+    }
+    out.push_back(info);
+  }
+  return out;
+}
 
 
 
 
-Simulation::Simulation(RobotAndDOFPtr rad) :
-  m_rad(rad),
+Simulation::Simulation(TrajOptProb& prob) :
+  m_prob(prob),
+  m_rad(prob.GetRAD()),
+  m_env(prob.GetEnv()),
   m_runs_executed(0),
-  m_env(rad->GetRobot()->GetEnv()),
   m_curr_result(new SimResult),
   m_curr_result_upsampled(new SimResult)
 { }
@@ -41,21 +60,21 @@ void Simulation::SetSimParams(const SimParams& p) {
   m_params = p;
 }
 
-SimulationPtr Simulation::GetOrCreate(RobotAndDOFPtr rad) {
-  EnvironmentBasePtr env = rad->GetRobot()->GetEnv();
+SimulationPtr Simulation::GetOrCreate(TrajOptProb& prob) {
+  EnvironmentBasePtr env = prob.GetEnv();
   const string name = "trajopt_simulation";
-  UserDataPtr ud = GetUserData(env, name);
+  UserDataPtr ud = GetUserData(*env, name);
   if (!ud) {
     RAVELOG_DEBUG("creating physics simulation for environment");
-    ud.reset(new Simulation(rad));
-    SetUserData(env, name, ud);
+    ud.reset(new Simulation(prob));
+    SetUserData(*env, name, ud);
   } else {
     RAVELOG_DEBUG("already have physics simulation for environment");
   }
   return boost::dynamic_pointer_cast<Simulation>(ud);
 }
 
-void Simulation::Run(const TrajArray& traj) {
+void Simulation::RunTraj(const TrajArray& traj) {
   // construct bullet mirror
   bs::BulletEnvironment bt_env(m_env, m_params.dynamic_obj_names);
   bs::BulletObjectPtr bt_robot = bt_env.GetObjectByName(m_rad->GetRobot()->GetName());
@@ -129,17 +148,35 @@ SimResultPtr Simulation::GetResultUpsampled() {
 }
 
 
+void Simulation::PreEvaluateCallback(const DblVec& x) {
+  RunTraj(getTraj(x, m_prob.GetVars()));
+}
+
+Optimizer::Callback Simulation::MakePreEvaluateCallback() {
+  return boost::bind(&Simulation::PreEvaluateCallback, this, _2);
+}
 
 
-ObjectSlideCost::ObjectSlideCost(int timestep, const string& object_name, double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1) :
-    m_timestep(timestep),
+
+#if 0
+void SimulationPlotterDummyCost::Plot(const DblVec& x, OR::EnvironmentBase&, std::vector<OR::GraphHandlePtr>& handles) {
+  SimResultPtr res(m_sim->GetResult());
+  for (Name2ObjectTraj::iterator i = res->obj_trajs.begin(); i != res->obj_trajs.end(); ++i) {
+
+  }
+}
+#endif
+
+
+ObjectSlideCost::ObjectSlideCost(int timestep, const string& object_name, double dist_pen, double coeff, RobotAndDOFPtr rad, const VarVector& vars0, const VarVector& vars1, SimulationPtr sim) :
+    m_timestep(timestep), // TODO: remove
     m_object_name(object_name),
     m_dist_pen(dist_pen),
     m_coeff(coeff),
     m_rad(rad),
     m_vars0(vars0),
     m_vars1(vars1),
-    m_sim(Simulation::GetOrCreate(rad))
+    m_sim(sim)
 { }
 
 
@@ -151,10 +188,12 @@ ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model
 
 
 double ObjectSlideCost::value(const vector<double>& x) {
+  /*
   SimResultPtr res = m_sim->Run(x); // FIXME
   ObjectTraj& obj_traj = res->obj_trajs[m_object_name];
 
-  obj_traj.xyz
+  obj_traj.xyz*/
+  return 0;
 }
 
 void ObjectSlideCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {

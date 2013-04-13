@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include "trajopt/problem_description.hpp"
 #include "trajopt/collision_avoidance.hpp"
+#include "trajopt/scene_objectives.hpp"
 #include <set>
 using namespace OpenRAVE;
 using namespace util;
@@ -50,7 +51,19 @@ static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStat
   }
 }
 
-static void PlotCosts(OSGViewer& viewer, vector<CostPtr>& costs, vector<ConstraintPtr>& cnts, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const VarArray& vars, const DblVec& x) {
+static void PlotCosts(OSGViewer& viewer, TrajOptProb& prob, const DblVec& x) {
+  vector<CostPtr>& costs = prob.getCosts();
+  vector<ConstraintPtr> cnts = prob.getConstraints();
+  RobotAndDOF& rad = *prob.GetRAD();
+  const VarArray& vars = prob.GetVars();
+
+  vector<SceneStateInfoPtr> scene_states;
+  if (prob.GetSceneStates().empty() && !prob.GetDynamicObjects().empty()) {
+    scene_states = Simulation::GetOrCreate(prob)->GetResult()->ToSceneStateInfos();
+  } else if (!prob.GetSceneStates().empty()) {
+    scene_states = prob.GetSceneStates();
+  }
+
   vector<GraphHandlePtr> handles;
   BOOST_FOREACH(CostPtr& cost, costs) {
     if (Plotter* plotter = dynamic_cast<Plotter*>(cost.get())) {
@@ -128,14 +141,7 @@ static void RegisterTrajPlayCallbacks(OSGViewerPtr viewer) {
 Optimizer::Callback PlotCallback(TrajOptProb& prob) {
   OSGViewerPtr viewer = OSGViewer::GetOrCreate(prob.GetEnv());
   RegisterTrajPlayCallbacks(viewer);
-  vector<ConstraintPtr> cnts = prob.getConstraints();
-  return boost::bind(&PlotCosts, boost::ref(*viewer),
-                      boost::ref(prob.getCosts()),
-                      cnts,
-                      boost::ref(*prob.GetRAD()),
-                      boost::ref(prob.GetSceneStates()),
-                      boost::ref(prob.GetVars()),
-                      _2);
+  return boost::bind(&PlotCosts, boost::ref(*viewer), boost::ref(prob), _2);
 }
 
 }

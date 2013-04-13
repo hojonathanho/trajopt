@@ -26,6 +26,8 @@ set(GTEST_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/gtest/include)
 set(JSON_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/json/include)
 set(HACD_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/ext/HACD_Lib/inc ${CMAKE_SOURCE_DIR}/ext/HACD_Lib/src)
 set(BULLETSIM_INCLUDE_DIRS ~/code/bulletsim-lite/src)
+find_library(BULLETSIM_LIBRARY simulation ~/build/bulletsim-lite/lib)
+set(BULLETSIM_LIBRARIES ${BULLETSIM_LIBRARY} python2.7)
 
 enable_testing()
 

@@ -28,7 +28,7 @@ void RegisterMakers() {
   CostInfo::RegisterMaker("joint_vel", &JointVelCostInfo::create);
   CostInfo::RegisterMaker("collision", &CollisionCostInfo::create_discrete);
   CostInfo::RegisterMaker("continuous_collision", &CollisionCostInfo::create_continuous);
-
+  CostInfo::RegisterMaker("object_slide", &ObjectSlideCostInfo::create);
   CntInfo::RegisterMaker("joint", &JointConstraintInfo::create);
   CntInfo::RegisterMaker("pose", &PoseCntInfo::create);
   CntInfo::RegisterMaker("cart_vel", &CartVelCntInfo::create);
@@ -255,8 +255,8 @@ TrajOptResultPtr OptimizeProblem(TrajOptProbPtr prob, bool plot) {
     opt.addCallback(PlotCallback(*prob));
   }
   if (!prob->GetDynamicObjects().empty()) {
-    SimulationPtr sim = Simulation::GetOrCreate(prob->GetRAD());
-    opt.addPreEvaluateCallback(sim->MakeCallback());
+    SimulationPtr sim = Simulation::GetOrCreate(*prob);
+    opt.addPreEvaluateCallback(sim->MakePreEvaluateCallback());
   }
   opt.initialize(trajToDblVec(prob->GetInitTraj()));
   opt.optimize();
@@ -495,7 +495,6 @@ void CollisionCostInfo::fromJson(const Value& v) {
     for (int i = 0; i < object_costs.size(); ++i) {
       string tag_name = object_costs[i]["name"].asString();
       DblVec cur_coeffs;
-      cout << tag_name << endl;
       childFromJson(object_costs[i], cur_coeffs, "coeffs");
       if (cur_coeffs.size() == 1) cur_coeffs = DblVec(n_terms, cur_coeffs[0]);
       else if (cur_coeffs.size() != n_terms) {
@@ -658,8 +657,8 @@ void ObjectSlideCostInfo::fromJson(const Value& v) {
 }
 
 void ObjectSlideCostInfo::hatch(TrajOptProb& prob) {
-  for (int i=first_step; i <= last_step; ++i) {
-    CostPtr cost(new ObjectSlideCost(i, object_name, dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetVarRow(i), prob.GetVarRow(i+1)));
+  for (int i=first_step; i <= last_step-1; ++i) {
+    CostPtr cost(new ObjectSlideCost(i, object_name, dist_pen[i-first_step], coeffs[i-first_step], prob.GetRAD(), prob.GetVarRow(i), prob.GetVarRow(i+1), Simulation::GetOrCreate(prob)));
     prob.addCost(cost);
     cost->setName( (boost::format("%s_%i")%name%i).str() );
   }

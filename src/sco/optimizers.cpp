@@ -246,6 +246,7 @@ OptStatus BasicTrustRegionSQP::optimize() {
 
   for (int merit_increases=0; merit_increases < max_merit_coeff_increases_; ++merit_increases) { /* merit adjustment loop */
     for (int iter=1; ; ++iter) { /* sqp loop */
+      callPreEvaluateCallbacks(x_);
       callCallbacks(x_);
 
       LOG_DEBUG("current iterate: %s", CSTR(x_));
@@ -253,14 +254,12 @@ OptStatus BasicTrustRegionSQP::optimize() {
 
       // speedup: if you just evaluated the cost when doing the line search, use that
       if (results_.cost_vals.empty()) { //only happens on the first iteration
-        callPreEvaluateCallbacks(x_);
         results_.cnt_viols = evaluateConstraintViols(constraints, x_);
         results_.cost_vals = evaluateCosts(prob_->getCosts(), x_);
         assert(results_.n_func_evals == 0);
         ++results_.n_func_evals;
       }
 
-      callPreEvaluateCallbacks(x_);
       vector<ConvexObjectivePtr> cost_models = convexifyCosts(prob_->getCosts(),x_, model_.get());
       vector<ConvexConstraintsPtr> cnt_models = convexifyConstraints(constraints, x_, model_.get());
       vector<ConvexObjectivePtr> cnt_cost_models = cntsToCosts(cnt_models, merit_error_coeff_, model_.get());

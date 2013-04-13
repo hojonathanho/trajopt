@@ -22,7 +22,7 @@ add_library(trajopt
 	bullet_unity.cpp
   scene_objectives.cpp
 )
-target_link_libraries(trajopt ${OpenRAVE_BOTH_LIBRARIES} ${Boost_SYSTEM_LIBRARY} sco utils json osgviewer)
+target_link_libraries(trajopt ${OpenRAVE_BOTH_LIBRARIES} ${Boost_SYSTEM_LIBRARY} sco utils json osgviewer ${BULLETSIM_LIBRARIES})
 
 add_subdirectory(test)
 
