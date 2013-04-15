@@ -20,8 +20,8 @@ static const float TRAJ_DEFAULT_TRANSPARENCY = .35;
 static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_INACTIVE_TRANSPARENCY = .1;
 
-static const float TRAJ_SCENE_DEFAULT_TRANSPARENCY = .35;
-static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = 1;
+static const float TRAJ_SCENE_DEFAULT_TRANSPARENCY = .2;
+static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = .3;
 static const float TRAJ_SCENE_INACTIVE_TRANSPARENCY = .1;
 
 static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<vector<GraphHandlePtr> >& handles, vector<GraphHandlePtr>& scene_handles) {
@@ -44,6 +44,7 @@ static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStat
       vector<KinBodyPtr> kinbodies_to_plot;
       BOOST_FOREACH(ObjectStateInfoPtr& o, scene_states[i]->obj_state_infos) {
         kinbodies_to_plot.push_back(rad.GetRobot()->GetEnv()->GetKinBody(o->name));
+        //std::cout << i << ' ' << o->name << ' ' << o->xyz.transpose() << ' ' << o->wxyz.transpose() << std::endl;
       }
       scene_handles.push_back(viewer.PlotKinBodies(kinbodies_to_plot));
       SetTransparency(scene_handles.back(), TRAJ_SCENE_DEFAULT_TRANSPARENCY);
@@ -58,8 +59,9 @@ static void PlotCosts(OSGViewer& viewer, TrajOptProb& prob, const DblVec& x) {
   const VarArray& vars = prob.GetVars();
 
   vector<SceneStateInfoPtr> scene_states;
-  if (prob.GetSceneStates().empty() && !prob.GetDynamicObjects().empty()) {
+  if (prob.GetSceneStates().empty() && prob.HasSimulation()) {
     scene_states = Simulation::GetOrCreate(prob)->GetResult()->ToSceneStateInfos();
+    std::cout << "plotting: got scene states from simulation " << scene_states.size() << std::endl;
   } else if (!prob.GetSceneStates().empty()) {
     scene_states = prob.GetSceneStates();
   }

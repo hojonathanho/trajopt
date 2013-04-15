@@ -13,8 +13,8 @@ def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_targ
       "n_steps" : n_steps,
       "manip" : manip_name,
       "start_fixed" : True, # i.e., DOF values at first timestep are fixed based on current robot state
-      "dynamic_objects": ['box_0'],
     },
+    "sim_params": { "dynamic_obj_names": ["box_0"], "traj_time": 2},
     "costs" : [
     {
       "type" : "joint_vel", # joint-space velocity cost
@@ -32,18 +32,22 @@ def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_targ
     ],
     "constraints" : [
     # BEGIN pose_constraint
-    {
-      "type" : "pose", 
-      "params" : {"xyz" : xyz_target.tolist(), 
-                  "wxyz" : quat_target.tolist(), 
-                  "link": "r_gripper_tool_frame",
-                  # "timestep" : 9
-                  # omitted because timestep = n_steps-1 is default
-                  # "pos_coeffs" : [1,1,1], # omitted because that's default
-                  "rot_coeffs" : [1,1,1]
-                  }
-    }
+    #{
+    #  "type" : "pose", 
+    #  "params" : {"xyz" : xyz_target.tolist(), 
+    #              "wxyz" : quat_target.tolist(), 
+    #              "link": "r_gripper_tool_frame",
+    #              # "timestep" : 9
+    #              # omitted because timestep = n_steps-1 is default
+    #              # "pos_coeffs" : [1,1,1], # omitted because that's default
+    #              "rot_coeffs" : [1,1,1]
+    #              }
+    #}
     # END pose_constraint
+    {
+      "type" : "joint", # joint-space target
+      "params" : {"vals" : init_joint_target.tolist() } # length of vals = # dofs of manip
+    }
     ],
     "init_info": {
       "type": "straight_line",
@@ -77,7 +81,7 @@ def main():
 
   ### make straight-line trajectory ###
   traj_len = 20
-  start_pt = final_box_center - np.array([.1, 0, 0])
+  start_pt = final_box_center - np.array([.1, 0, .05])
   final_pt = start_pt + np.array([.2, 0, .2])
   line = mu.linspace2d(start_pt, final_pt, traj_len)
   handles.append(env.drawlinelist(np.array([start_pt,final_pt]),1))

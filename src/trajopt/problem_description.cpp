@@ -100,7 +100,6 @@ void BasicInfo::fromJson(const Json::Value& v) {
   childFromJson(v, manip, "manip");
   childFromJson(v, robot, "robot", string(""));
   childFromJson(v, dofs_fixed, "dofs_fixed", IntVec());
-  childFromJson(v, dynamic_objects, "dynamic_objects", StrVec());
 }
 
 
@@ -206,6 +205,8 @@ void ProblemConstructionInfo::fromJson(const Value& v) {
     PRINT_AND_THROW( boost::format("couldn't get manip %s")%basic_info.manip );
   }
 
+  if (v.isMember("sim_params")) childFromJson(v, sim_params_info, "sim_params");
+
   gPCI = this;
   if (v.isMember("costs")) fromJsonArray(v["costs"], cost_infos);
   if (v.isMember("constraints")) fromJsonArray(v["constraints"], cnt_infos);
@@ -254,7 +255,7 @@ TrajOptResultPtr OptimizeProblem(TrajOptProbPtr prob, bool plot) {
   if (plot) {
     opt.addCallback(PlotCallback(*prob));
   }
-  if (!prob->GetDynamicObjects().empty()) {
+  if (prob->HasSimulation()) {
     SimulationPtr sim = Simulation::GetOrCreate(*prob);
     opt.addPreEvaluateCallback(sim->MakePreEvaluateCallback());
   }
@@ -306,7 +307,14 @@ TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo& pci) {
     }
   }
 
-  prob->SetDynamicObjects(bi.dynamic_objects);
+  //prob->SetDynamicObjects(bi.dynamic_objects);
+  cout << "dynamic obj names " << pci.sim_params_info.dynamic_obj_names.size() << endl;
+  if (!pci.sim_params_info.dynamic_obj_names.empty()) {
+    prob->m_has_sim = true;
+    Simulation::GetOrCreate(*prob)->SetSimParams(pci.sim_params_info);
+  } else {
+    prob->m_has_sim = false;
+  }
 
   prob->SetSceneStates(pci.scene_state_infos);
 
@@ -625,6 +633,17 @@ void fromJson(const Json::Value& v, SceneStateInfoPtr& p) {
   p->fromJson(v);
 }
 
+void SimParamsInfo::fromJson(const Json::Value& v) {
+  childFromJson(v, dt, "dt", 0.01);
+  childFromJson(v, max_substeps, "max_substeps", 100);
+  childFromJson(v, internal_dt, "internal_dt", 0.01);
+  childFromJson(v, traj_time, "traj_time");
+  childFromJson(v, dynamic_obj_names, "dynamic_obj_names");
+}
+void fromJson(const Json::Value& v, SimParamsInfoPtr& p) {
+  p.reset(new SimParamsInfo);
+  p->fromJson(v);
+}
 
 void ObjectSlideCostInfo::fromJson(const Value& v) {
   FAIL_IF_FALSE(v.isMember("params"));
@@ -632,8 +651,8 @@ void ObjectSlideCostInfo::fromJson(const Value& v) {
 
   childFromJson(params, object_name, "object_name");
 
-  const StrVec& dynamic_objects = gPCI->basic_info.dynamic_objects;
-  if (std::find(dynamic_objects.begin(), dynamic_objects.end(), object_name) == dynamic_objects.end()) {
+  const StrVec& names = gPCI->sim_params_info.dynamic_obj_names;
+  if (std::find(names.begin(), names.end(), object_name) == names.end()) {
     PRINT_AND_THROW(boost::format("can't place sliding cost on %s, which isn't declared as dynamic") % object_name);
   }
 

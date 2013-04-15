@@ -2,6 +2,7 @@
 
 #include "problem_description.hpp"
 #include "sco/optimizers.hpp"
+#include "simulation/bulletsim_lite.h"
 #include <Eigen/Dense>
 
 namespace trajopt {
@@ -18,27 +19,17 @@ struct ObjectTraj {
 typedef boost::shared_ptr<ObjectTraj> ObjectTrajPtr;
 
 typedef std::map<string, ObjectTrajPtr> Name2ObjectTraj;
+typedef vector<bs::CollisionPtr> CollisionVec;
 struct SimResult {
   Name2ObjectTraj obj_trajs;
+  vector<CollisionVec> collisions;
   TrajArray robot_traj;
 
   vector<SceneStateInfoPtr> ToSceneStateInfos();
+  void Clear();
 };
 typedef boost::shared_ptr<SimResult> SimResultPtr;
 
-
-struct SimParams {
-  // Bullet step params
-  double dt;
-  int max_substeps;
-  double internal_dt;
-
-  // length of trajectory (seconds)
-  double traj_time;
-
-  // the non-kinematic objects
-  StrVec dynamic_obj_names;
-};
 
 class Simulation;
 typedef boost::shared_ptr<Simulation> SimulationPtr;
@@ -46,7 +37,7 @@ class Simulation : public OR::UserData {
 public:
   virtual ~Simulation() { }
 
-  void SetSimParams(const SimParams&);
+  void SetSimParams(const SimParamsInfo&);
   void RunTraj(const TrajArray&);
 
   void PreEvaluateCallback(const DblVec&);
@@ -61,7 +52,7 @@ private:
   TrajOptProb& m_prob;
   RobotAndDOFPtr m_rad;
   EnvironmentBasePtr m_env;
-  SimParams m_params;
+  SimParamsInfo m_params;
   int m_runs_executed;
   SimResultPtr m_curr_result, m_curr_result_upsampled;
 

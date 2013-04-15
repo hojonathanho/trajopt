@@ -28,6 +28,8 @@ class ObjectStateInfo;
 typedef boost::shared_ptr<ObjectStateInfo> ObjectStateInfoPtr;
 class SceneStateInfo;
 typedef boost::shared_ptr<SceneStateInfo> SceneStateInfoPtr;
+class SimParamsInfo;
+typedef boost::shared_ptr<SimParamsInfo> SimParamsInfoPtr;
 
 
 TrajOptProbPtr TRAJOPT_API ConstructProblem(const ProblemConstructionInfo&);
@@ -62,8 +64,7 @@ public:
   vector<SceneStateInfoPtr>& GetSceneStates() {return m_scene_states;}
   SceneStateInfoPtr GetSceneState(int i) {return m_scene_states.size() == 0 ? SceneStateInfoPtr() : m_scene_states[i];}
 
-  void SetDynamicObjects(const StrVec& v) {m_dynamic_objects = v;}
-  const StrVec& GetDynamicObjects() const {return m_dynamic_objects;}
+  bool HasSimulation() {return m_has_sim;}
 
   friend TrajOptProbPtr ConstructProblem(const ProblemConstructionInfo&);
 private:
@@ -71,7 +72,7 @@ private:
   RobotAndDOFPtr m_rad;
   TrajArray m_init_traj;
   vector<SceneStateInfoPtr> m_scene_states;
-  StrVec m_dynamic_objects;
+  bool m_has_sim;
   typedef std::pair<string,string> StringPair;
 };
 
@@ -88,7 +89,21 @@ struct BasicInfo  {
   string manip;
   string robot; // optional
   IntVec dofs_fixed; // optional
-  StrVec dynamic_objects; // optional
+  void fromJson(const Json::Value& v);
+};
+
+struct SimParamsInfo {
+  // Bullet step params
+  double dt;
+  int max_substeps;
+  double internal_dt;
+
+  // length of trajectory (seconds)
+  double traj_time;
+
+  // the non-kinematic objects
+  StrVec dynamic_obj_names;
+
   void fromJson(const Json::Value& v);
 };
 
@@ -180,7 +195,7 @@ public:
   vector<CostInfoPtr> cost_infos;
   vector<CntInfoPtr> cnt_infos;
   vector<SceneStateInfoPtr> scene_state_infos;
-
+  SimParamsInfo sim_params_info;
   InitInfo init_info;
 
   OR::EnvironmentBasePtr env;

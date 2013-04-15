@@ -1,16 +1,17 @@
 #include "scene_objectives.hpp"
 
-#include "simulation/bulletsim_lite.h"
 #include "utils/eigen_conversions.hpp"
 #include "utils/interpolation.hpp"
 #include "rave_utils.hpp"
+#include "sco/modeling_utils.hpp"
+#include "sco/sco_common.hpp"
+#include "sco/expr_ops.hpp"
+#include "sco/expr_vec_ops.hpp"
+#include "trajopt/rave_utils.hpp"
 
 namespace trajopt {
 
 /*
-OR::Vector toOR(const btVector3& v) {
-  return OR::Vector(v.x(), v.y(), v.z());
-}
 btQuaternion toBtQuat(const OR::Vector& q) {
   return btQuaternion(q[1], q[2], q[3], q[0]);
 }
@@ -18,13 +19,29 @@ btTransform toBt(const OR::Transform& t){
   return btTransform(toBtQuat(t.rot), toBt(t.trans));
 }*/
 
-Vector3d toEigen(const btVector3 &v) {
+Vector3d toVector3d(const btVector3 &v) {
   return Vector3d(v.x(), v.y(), v.z());
 }
 
-Vector4d toEigenQuat(const btQuaternion &q) {
+Vector4d toVector4d(const btQuaternion &q) {
   // use OpenRAVE's convention
   return Vector4d(q.w(), q.x(), q.y(), q.z());
+}
+
+Vector toOR(const Vector3d &v) {
+  return OR::Vector(v(0), v(1), v(2));
+}
+
+Vector toOR(const btVector3& v) {
+  return OR::Vector(v.x(), v.y(), v.z());
+}
+
+string toStr(const btVector3 &v) {
+  return (boost::format("[%d %d %d]") % v.x() % v.y() % v.z()).str();
+}
+
+string toStr(KinBody::LinkPtr l) {
+  return (boost::format("%s/%s") % l->GetParent()->GetName() % l->GetName()).str();
 }
 
 vector<SceneStateInfoPtr> SimResult::ToSceneStateInfos() {
@@ -44,7 +61,32 @@ vector<SceneStateInfoPtr> SimResult::ToSceneStateInfos() {
   return out;
 }
 
+void SimResult::Clear() {
+  obj_trajs.clear();
+  collisions.clear();
+  robot_traj.setConstant(robot_traj.rows(), robot_traj.cols(), -999);
+}
 
+template<typename T>
+static bool in(const T& x, const vector<T>& v) {
+  return std::find(v.begin(), v.end(), x) != v.end();
+}
+
+// output collision convention: A is robot, B is object
+static CollisionVec FilterAndFlipCollisions(const CollisionVec &collisions, const string& robot_name, const StrVec& obj_names) {
+  CollisionVec out;
+  out.reserve(collisions.size());
+  BOOST_FOREACH(bs::CollisionPtr c, collisions) {
+    string nameA = c->linkA->GetParent()->GetName();
+    string nameB = c->linkB->GetParent()->GetName();
+    if (in(nameA, obj_names) && nameB == robot_name) {
+      out.push_back(c->Flipped());
+    } else if (in(nameB, obj_names) && nameA == robot_name) {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
 
 
 Simulation::Simulation(TrajOptProb& prob) :
@@ -54,13 +96,16 @@ Simulation::Simulation(TrajOptProb& prob) :
   m_runs_executed(0),
   m_curr_result(new SimResult),
   m_curr_result_upsampled(new SimResult)
-{ }
+{
+  assert(prob.HasSimulation());
+}
 
-void Simulation::SetSimParams(const SimParams& p) {
+void Simulation::SetSimParams(const SimParamsInfo& p) {
   m_params = p;
 }
 
 SimulationPtr Simulation::GetOrCreate(TrajOptProb& prob) {
+  assert(prob.HasSimulation());
   EnvironmentBasePtr env = prob.GetEnv();
   const string name = "trajopt_simulation";
   UserDataPtr ud = GetUserData(*env, name);
@@ -75,8 +120,15 @@ SimulationPtr Simulation::GetOrCreate(TrajOptProb& prob) {
 }
 
 void Simulation::RunTraj(const TrajArray& traj) {
+  cout << "running trajectory " << traj<< endl;
+  cout << m_params.dt << ' ' << m_params.dynamic_obj_names << ' ' << m_params.traj_time << endl;
+
+  m_curr_result->Clear();
+  m_curr_result_upsampled->Clear();
+
   // construct bullet mirror
   bs::BulletEnvironment bt_env(m_env, m_params.dynamic_obj_names);
+  bt_env.SetContactDistance(.05);
   bs::BulletObjectPtr bt_robot = bt_env.GetObjectByName(m_rad->GetRobot()->GetName());
   vector<bs::BulletObjectPtr> bt_dynamic_objs = bt_env.GetDynamicObjects();
   assert(bt_dynamic_objs.size() == m_params.dynamic_obj_names.size());
@@ -99,22 +151,42 @@ void Simulation::RunTraj(const TrajArray& traj) {
   // run and record upsampled traj
   Name2ObjectTraj obj_trajs_upsampled;
   BOOST_FOREACH(const string& name, m_params.dynamic_obj_names) {
-    obj_trajs_upsampled[name].reset(new ObjectTraj(len_upsampled));
+    ObjectTrajPtr t(new ObjectTraj(len_upsampled));
+    obj_trajs_upsampled.insert(make_pair(name, t));
   }
   RobotBase::RobotStateSaver saver = m_rad->Save();
+  cout << "upsampled len " << len_upsampled << endl;
   for (int i = 0; i < len_upsampled; ++i) {
     m_rad->SetDOFValues(toDblVec(traj_upsampled.row(i)));
     bt_robot->UpdateBullet();
 
     bt_env.Step(m_params.dt, m_params.max_substeps, m_params.internal_dt);
+    // ensure quasistatic-ness
+    BOOST_FOREACH(bs::BulletObjectPtr obj, bt_dynamic_objs) {
+      obj->SetLinearVelocity(btVector3(0, 0, 0));
+      obj->SetAngularVelocity(btVector3(0, 0, 0));
+    }
 
     // record object states
     BOOST_FOREACH(bs::BulletObjectPtr obj, bt_dynamic_objs) {
       ObjectTrajPtr obj_traj = obj_trajs_upsampled[obj->GetName()];
       btTransform t = obj->GetTransform();
-      obj_traj->xyz.row(i) = toEigen(t.getOrigin());
-      obj_traj->wxyz.row(i) = toEigenQuat(t.getRotation());
+      obj_traj->xyz.row(i) = toVector3d(t.getOrigin());
+      obj_traj->wxyz.row(i) = toVector4d(t.getRotation());
     }
+
+    // record collisions
+    vector<bs::CollisionPtr> collisions;
+    BOOST_FOREACH(bs::BulletObjectPtr obj, bt_dynamic_objs) {
+      vector<bs::CollisionPtr> c = FilterAndFlipCollisions(bt_env.ContactTest(obj), m_rad->GetRobot()->GetName(), m_params.dynamic_obj_names);
+      collisions.insert(collisions.end(), c.begin(), c.end());
+    }
+    m_curr_result_upsampled->collisions.push_back(collisions);
+//    m_curr_result_upsampled->collisions.push_back(FilterAndFlipCollisions(
+//      bt_env.DetectCollisions(),
+//      m_rad->GetRobot()->GetName(),
+//      m_params.dynamic_obj_names
+//    ));
   }
   m_curr_result_upsampled->robot_traj = traj_upsampled;
   m_curr_result_upsampled->obj_trajs = obj_trajs_upsampled;
@@ -122,21 +194,27 @@ void Simulation::RunTraj(const TrajArray& traj) {
   // downsample to original trajectory timing
   Name2ObjectTraj obj_trajs;
   BOOST_FOREACH(const string& name, m_params.dynamic_obj_names) {
-    obj_trajs[name].reset(new ObjectTraj(len));
+    ObjectTrajPtr t(new ObjectTraj(len));
+    obj_trajs.insert(make_pair(name, t));
   }
   for (int i = 0; i < len; ++i) {
     int ind_of_orig = (int) ((len_upsampled-1.)/(len-1.) * i);
     BOOST_FOREACH(bs::BulletObjectPtr obj, bt_dynamic_objs) {
       ObjectTrajPtr obj_traj = obj_trajs[obj->GetName()];
       ObjectTrajPtr obj_traj_upsampled = obj_trajs_upsampled[obj->GetName()];
-      obj_traj->xyz.row(ind_of_orig) = obj_traj_upsampled->xyz.row(i);
-      obj_traj->wxyz.row(ind_of_orig) = obj_traj_upsampled->wxyz.row(i);
+      obj_traj->xyz.row(i) = obj_traj_upsampled->xyz.row(ind_of_orig);
+      obj_traj->wxyz.row(i) = obj_traj_upsampled->wxyz.row(ind_of_orig);
     }
+    m_curr_result->collisions.push_back(m_curr_result_upsampled->collisions[ind_of_orig]);
   }
   m_curr_result->robot_traj = traj;
   m_curr_result->obj_trajs = obj_trajs;
 
   ++m_runs_executed;
+  cout << "simulation done." << endl;
+  BOOST_FOREACH(const string& name, m_params.dynamic_obj_names) {
+    cout << name << ' ' << obj_trajs[name]->xyz << ' ' << obj_trajs[name]->wxyz << endl;
+  }
 }
 
 SimResultPtr Simulation::GetResult() {
@@ -149,6 +227,7 @@ SimResultPtr Simulation::GetResultUpsampled() {
 
 
 void Simulation::PreEvaluateCallback(const DblVec& x) {
+  cout << "in pre eval cb" << endl;
   RunTraj(getTraj(x, m_prob.GetVars()));
 }
 
@@ -183,20 +262,79 @@ ObjectSlideCost::ObjectSlideCost(int timestep, const string& object_name, double
 ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model) {
   ConvexObjectivePtr out(new ConvexObjective(model));
 
+  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
+  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
+  if (collisions0.empty() || collisions1.empty()) {
+    cout << "WARNING: zero convexification because collisions are empty: " << collisions0.empty() << ' ' << collisions1.empty() << endl;
+    return out;
+  }
+  // TODO: merge multiple collisions, check that they're all about the same
+  bs::CollisionPtr c0 = collisions0[0];
+  bs::CollisionPtr c1 = collisions1[0];
+  //Vector3d n(toVector3d(c0->normalB2A));
+  Vector3d n(-1, 0, 0);
+
+  //VectorXd vals0 = m_sim->GetResult()->robot_traj.row(m_timestep);
+  //VectorXd vals1 = m_sim->GetResult()->robot_traj.row(m_timestep+1);
+  DblVec vals0 = getDblVec(x, m_vars0);
+  DblVec vals1 = getDblVec(x, m_vars1);
+
+  m_rad->SetDOFValues(vals0);
+  VectorXd grad0 = -n.transpose() * m_rad->PositionJacobian(c0->linkA->GetIndex(), toOR(c0->ptA));
+  m_rad->SetDOFValues(vals1);
+  VectorXd grad1 = -n.transpose() * m_rad->PositionJacobian(c1->linkA->GetIndex(), toOR(c1->ptA));
+
+  AffExpr expr(-n.dot(toVector3d(c1->ptA - c0->ptA)));
+
+  exprInc(expr, varDot(grad1, m_vars1));
+  exprInc(expr, -grad1.dot(toVectorXd(vals1)));
+
+  exprInc(expr, varDot(-grad0, m_vars0));
+  exprInc(expr, grad0.dot(toVectorXd(vals0)));
+
+  cout << "linearization " << m_timestep << ": " << expr << endl;
+
+  out->addHinge(expr, m_coeff);
+  //out->addAffExpr(exprMult(expr, m_coeff));
   return out;
 }
 
-
 double ObjectSlideCost::value(const vector<double>& x) {
-  /*
-  SimResultPtr res = m_sim->Run(x); // FIXME
-  ObjectTraj& obj_traj = res->obj_trajs[m_object_name];
-
-  obj_traj.xyz*/
-  return 0;
+  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
+  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
+  cout << "at time " << m_timestep << ": num collisions " << collisions0.size() << "\tpos: " << m_sim->GetResult()->obj_trajs.begin()->second->xyz.row(m_timestep) << endl;
+//  BOOST_FOREACH(bs::CollisionPtr& c, collisions0) {
+//    cout << '\t' << toStr(c->linkA) << ' ' << toStr(c->linkB) << ' ' << toStr(c->ptA) << ' ' << toStr(c->ptB) << ' ' << toStr(c->normalB2A) << ' ' << c->distance << endl;
+//  }
+  if (collisions0.empty() || collisions1.empty()) {
+    cout << "\tval: ZERO" << endl;
+    return 0.;
+  }
+  // TODO: merge multiple collisions, check that they're all about the same
+  bs::CollisionPtr c0 = collisions0[0];
+  bs::CollisionPtr c1 = collisions1[0];
+  //Vector3d n = toVector3d(c0->normalB2A);
+  Vector3d n(-1, 0, 0);
+  double val = pospart(-m_coeff * n.dot(toVector3d(c1->ptA - c0->ptA)));
+  cout << "\tval: " << val << endl;
+  return val;
 }
 
 void ObjectSlideCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
+  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
+  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
+  if (collisions0.empty() || collisions1.empty()) {
+    return;
+  }
+  bs::CollisionPtr c0 = collisions0[0];
+  bs::CollisionPtr c1 = collisions1[0];
+
+  typedef OpenRAVE::RaveVector<float> RaveVectorf;
+  RaveVectorf color = RaveVectorf(0,1,0,1);
+  //Vector3d n = toVector3d(c0->normalB2A);
+  Vector3d n(-1, 0, 0);
+  Vector3d dir = n * n.transpose() * toVector3d(c1->ptA - c0->ptA);
+  handles.push_back(env.drawarrow(toOR(c0->ptA), toOR(toVector3d(c0->ptA) + dir), .0025, color));
 }
 
 
