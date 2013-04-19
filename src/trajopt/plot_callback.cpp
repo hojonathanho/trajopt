@@ -21,7 +21,7 @@ static const float TRAJ_ACTIVE_TRANSPARENCY = 1;
 static const float TRAJ_INACTIVE_TRANSPARENCY = .1;
 
 static const float TRAJ_SCENE_DEFAULT_TRANSPARENCY = .2;
-static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = .3;
+static const float TRAJ_SCENE_ACTIVE_TRANSPARENCY = .7;
 static const float TRAJ_SCENE_INACTIVE_TRANSPARENCY = .1;
 
 static void PlotTraj(OSGViewer& viewer, RobotAndDOF& rad, const vector<SceneStateInfoPtr> &scene_states, const TrajArray& x, vector<vector<GraphHandlePtr> >& handles, vector<GraphHandlePtr>& scene_handles) {

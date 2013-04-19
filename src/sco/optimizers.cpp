@@ -308,7 +308,7 @@ OptStatus BasicTrustRegionSQP::optimize() {
         }
 
         callPreEvaluateCallbacks(new_x);
-        //callCallbacks(new_x);
+        callCallbacks(new_x);
         DblVec new_cost_vals = evaluateCosts(prob_->getCosts(), new_x);
         DblVec new_cnt_viols = evaluateConstraintViols(constraints, new_x);
         ++results_.n_func_evals;

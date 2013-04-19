@@ -15,6 +15,7 @@ struct ObjectTraj {
   MatrixX4d wxyz;
 
   ObjectTraj(int len) : xyz(len, 3), wxyz(len, 4) { }
+  OR::Transform GetTransform(int t) const;
 };
 typedef boost::shared_ptr<ObjectTraj> ObjectTrajPtr;
 
@@ -89,6 +90,8 @@ private:
   RobotAndDOFPtr m_rad;
   VarVector m_vars0, m_vars1;
   SimulationPtr m_sim;
+
+  bool GetCollisionData(bs::CollisionPtr& out_c0, bs::CollisionPtr& out_c1, Vector3d &out_n);
 };
 
 

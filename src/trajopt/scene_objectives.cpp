@@ -32,6 +32,10 @@ Vector toOR(const Vector3d &v) {
   return OR::Vector(v(0), v(1), v(2));
 }
 
+Vector toORQuat(const Vector4d& v) {
+  return OR::Vector(v(0), v(1), v(2), v(3));
+}
+
 Vector toOR(const btVector3& v) {
   return OR::Vector(v.x(), v.y(), v.z());
 }
@@ -42,6 +46,14 @@ string toStr(const btVector3 &v) {
 
 string toStr(KinBody::LinkPtr l) {
   return (boost::format("%s/%s") % l->GetParent()->GetName() % l->GetName()).str();
+}
+
+Matrix3d toRotationMatrix(const Vector4d &q) {
+  return Quaterniond(q(0), q(1), q(2), q(3)).matrix();
+}
+
+OR::Transform ObjectTraj::GetTransform(int t) const {
+  return toRaveTransform(wxyz.row(t), xyz.row(t));
 }
 
 vector<SceneStateInfoPtr> SimResult::ToSceneStateInfos() {
@@ -68,23 +80,24 @@ void SimResult::Clear() {
 }
 
 template<typename T>
-static bool in(const T& x, const vector<T>& v) {
+static bool isIn(const T& x, const vector<T>& v) {
   return std::find(v.begin(), v.end(), x) != v.end();
 }
 
 // output collision convention: A is robot, B is object
 static CollisionVec FilterAndFlipCollisions(const CollisionVec &collisions, const string& robot_name, const StrVec& obj_names) {
   CollisionVec out;
-  out.reserve(collisions.size());
+  //CollisionVec flipped;
   BOOST_FOREACH(bs::CollisionPtr c, collisions) {
     string nameA = c->linkA->GetParent()->GetName();
     string nameB = c->linkB->GetParent()->GetName();
-    if (in(nameA, obj_names) && nameB == robot_name) {
-      out.push_back(c->Flipped());
-    } else if (in(nameB, obj_names) && nameA == robot_name) {
+    if (isIn(nameA, obj_names) && nameB == robot_name) {
+      //flipped.push_back(c->Flipped());
+    } else if (isIn(nameB, obj_names) && nameA == robot_name) {
       out.push_back(c);
     }
   }
+  //out.insert(out.end(), flipped.begin(), flipped.end());
   return out;
 }
 
@@ -157,11 +170,12 @@ void Simulation::RunTraj(const TrajArray& traj) {
   RobotBase::RobotStateSaver saver = m_rad->Save();
   cout << "upsampled len " << len_upsampled << endl;
   for (int i = 0; i < len_upsampled; ++i) {
+    // set joint angles
     m_rad->SetDOFValues(toDblVec(traj_upsampled.row(i)));
     bt_robot->UpdateBullet();
 
+    // quasistatic step
     bt_env.Step(m_params.dt, m_params.max_substeps, m_params.internal_dt);
-    // ensure quasistatic-ness
     BOOST_FOREACH(bs::BulletObjectPtr obj, bt_dynamic_objs) {
       obj->SetLinearVelocity(btVector3(0, 0, 0));
       obj->SetAngularVelocity(btVector3(0, 0, 0));
@@ -211,10 +225,10 @@ void Simulation::RunTraj(const TrajArray& traj) {
   m_curr_result->obj_trajs = obj_trajs;
 
   ++m_runs_executed;
-  cout << "simulation done." << endl;
-  BOOST_FOREACH(const string& name, m_params.dynamic_obj_names) {
-    cout << name << ' ' << obj_trajs[name]->xyz << ' ' << obj_trajs[name]->wxyz << endl;
-  }
+//  cout << "simulation done." << endl;
+//  BOOST_FOREACH(const string& name, m_params.dynamic_obj_names) {
+//    cout << name << ' ' << obj_trajs[name]->xyz << ' ' << obj_trajs[name]->wxyz << endl;
+//  }
 }
 
 SimResultPtr Simulation::GetResult() {
@@ -227,7 +241,6 @@ SimResultPtr Simulation::GetResultUpsampled() {
 
 
 void Simulation::PreEvaluateCallback(const DblVec& x) {
-  cout << "in pre eval cb" << endl;
   RunTraj(getTraj(x, m_prob.GetVars()));
 }
 
@@ -258,21 +271,40 @@ ObjectSlideCost::ObjectSlideCost(int timestep, const string& object_name, double
     m_sim(sim)
 { }
 
-
-ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model) {
-  ConvexObjectivePtr out(new ConvexObjective(model));
-
+bool ObjectSlideCost::GetCollisionData(bs::CollisionPtr& out_c0, bs::CollisionPtr& out_c1, Vector3d &out_n) {
   CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
   CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
   if (collisions0.empty() || collisions1.empty()) {
     cout << "WARNING: zero convexification because collisions are empty: " << collisions0.empty() << ' ' << collisions1.empty() << endl;
+    return false;
+  }
+  cout << "at time " << m_timestep << ": num collisions " << collisions0.size() << "\tpos: " << m_sim->GetResult()->obj_trajs.begin()->second->xyz.row(m_timestep) << endl;
+  BOOST_FOREACH(bs::CollisionPtr& c, collisions0) {
+    cout << '\t' << toStr(c->linkA) << ' ' << toStr(c->linkB) << ' ' << toStr(c->ptA) << ' ' << toStr(c->ptB) << ' ' << toStr(c->normalB2A) << ' ' << c->distance << endl;
+  }
+
+  // TODO: merge multiple collisions, check that they're all about the same
+  out_c0 = collisions0[0];
+  out_c1 = collisions1[0];
+  out_n = Vector3d(-1, 0, 0);
+  //Matrix3d rot(toRotationMatrix(m_sim->GetResult()->obj_trajs[m_object_name]->wxyz.row(m_timestep)));
+  //Matrix3d rot_orig(toRotationMatrix(m_sim->GetResult()->obj_trajs[m_object_name]->wxyz.row(0)));
+  //out_n = rot_orig.inverse().transpose() * rot.transpose() * toVector3d(out_c0->normalB2A);
+  //out_n = toVector3d(out_c0->normalB2A);
+  return true;
+}
+
+ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model) {
+  ConvexObjectivePtr out(new ConvexObjective(model));
+
+  bs::CollisionPtr c0, c1; Vector3d n;
+  if (!GetCollisionData(c0, c1, n)) {
     return out;
   }
-  // TODO: merge multiple collisions, check that they're all about the same
-  bs::CollisionPtr c0 = collisions0[0];
-  bs::CollisionPtr c1 = collisions1[0];
   //Vector3d n(toVector3d(c0->normalB2A));
-  Vector3d n(-1, 0, 0);
+  //Vector3d n(-1, 0, 0);
+  //OR::Transform obj_init_trans = toRaveTransform(m_sim->GetResult()->obj_trajs[m_object_name]->wxyz.row(0), m_sim->GetResult()->obj_trajs[m_object_name]->xyz.row(0));
+  //OR::Vector local_manip_pt = obj_init_trans.inverse() * toOR(c0->ptA);
 
   //VectorXd vals0 = m_sim->GetResult()->robot_traj.row(m_timestep);
   //VectorXd vals1 = m_sim->GetResult()->robot_traj.row(m_timestep+1);
@@ -280,9 +312,13 @@ ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model
   DblVec vals1 = getDblVec(x, m_vars1);
 
   m_rad->SetDOFValues(vals0);
-  VectorXd grad0 = -n.transpose() * m_rad->PositionJacobian(c0->linkA->GetIndex(), toOR(c0->ptA));
+  DblMatrix jac0 = m_rad->PositionJacobian(c0->linkA->GetIndex(), toOR(c0->ptA));
+  //OR::Transform trans0 = m_rad->GetRobot()->GetLink(c0->linkA->GetName())->GetTransform();
   m_rad->SetDOFValues(vals1);
-  VectorXd grad1 = -n.transpose() * m_rad->PositionJacobian(c1->linkA->GetIndex(), toOR(c1->ptA));
+  DblMatrix jac1 = m_rad->PositionJacobian(c1->linkA->GetIndex(), toOR(c1->ptA));
+
+  VectorXd grad0 = -n.transpose() * jac0;
+  VectorXd grad1 = -n.transpose() * jac1;
 
   AffExpr expr(-n.dot(toVector3d(c1->ptA - c0->ptA)));
 
@@ -295,46 +331,54 @@ ConvexObjectivePtr ObjectSlideCost::convex(const vector<double>& x, Model* model
   cout << "linearization " << m_timestep << ": " << expr << endl;
 
   out->addHinge(expr, m_coeff);
-  //out->addAffExpr(exprMult(expr, m_coeff));
   return out;
 }
 
 double ObjectSlideCost::value(const vector<double>& x) {
-  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
-  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
-  cout << "at time " << m_timestep << ": num collisions " << collisions0.size() << "\tpos: " << m_sim->GetResult()->obj_trajs.begin()->second->xyz.row(m_timestep) << endl;
-//  BOOST_FOREACH(bs::CollisionPtr& c, collisions0) {
-//    cout << '\t' << toStr(c->linkA) << ' ' << toStr(c->linkB) << ' ' << toStr(c->ptA) << ' ' << toStr(c->ptB) << ' ' << toStr(c->normalB2A) << ' ' << c->distance << endl;
+//  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
+//  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
+//  cout << "at time " << m_timestep << ": num collisions " << collisions0.size() << "\tpos: " << m_sim->GetResult()->obj_trajs.begin()->second->xyz.row(m_timestep) << endl;
+////  BOOST_FOREACH(bs::CollisionPtr& c, collisions0) {
+////    cout << '\t' << toStr(c->linkA) << ' ' << toStr(c->linkB) << ' ' << toStr(c->ptA) << ' ' << toStr(c->ptB) << ' ' << toStr(c->normalB2A) << ' ' << c->distance << endl;
+////  }
+//  if (collisions0.empty() || collisions1.empty()) {
+//    cout << "\tval: ZERO" << endl;
+//    return 0.;
 //  }
-  if (collisions0.empty() || collisions1.empty()) {
-    cout << "\tval: ZERO" << endl;
-    return 0.;
+//  // TODO: merge multiple collisions, check that they're all about the same
+//  bs::CollisionPtr c0 = collisions0[0];
+//  bs::CollisionPtr c1 = collisions1[0];
+//  Vector3d n = toVector3d(c0->normalB2A);
+//  //Vector3d n(-1, 0, 0);
+
+  bs::CollisionPtr c0, c1; Vector3d n;
+  if (!GetCollisionData(c0, c1, n)) {
+    return 0;
   }
-  // TODO: merge multiple collisions, check that they're all about the same
-  bs::CollisionPtr c0 = collisions0[0];
-  bs::CollisionPtr c1 = collisions1[0];
-  //Vector3d n = toVector3d(c0->normalB2A);
-  Vector3d n(-1, 0, 0);
+
   double val = pospart(-m_coeff * n.dot(toVector3d(c1->ptA - c0->ptA)));
   cout << "\tval: " << val << endl;
   return val;
 }
 
 void ObjectSlideCost::Plot(const DblVec& x, OR::EnvironmentBase& env, std::vector<OR::GraphHandlePtr>& handles) {
-  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
-  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
-  if (collisions0.empty() || collisions1.empty()) {
+//  CollisionVec collisions0 = m_sim->GetResult()->collisions[m_timestep];
+//  CollisionVec collisions1 = m_sim->GetResult()->collisions[m_timestep+1];
+//  if (collisions0.empty() || collisions1.empty()) {
+//    return;
+//  }
+//  bs::CollisionPtr c0 = collisions0[0];
+//  bs::CollisionPtr c1 = collisions1[0];
+
+  bs::CollisionPtr c0, c1; Vector3d n;
+  if (!GetCollisionData(c0, c1, n)) {
     return;
   }
-  bs::CollisionPtr c0 = collisions0[0];
-  bs::CollisionPtr c1 = collisions1[0];
 
   typedef OpenRAVE::RaveVector<float> RaveVectorf;
   RaveVectorf color = RaveVectorf(0,1,0,1);
-  //Vector3d n = toVector3d(c0->normalB2A);
-  Vector3d n(-1, 0, 0);
   Vector3d dir = n * n.transpose() * toVector3d(c1->ptA - c0->ptA);
-  handles.push_back(env.drawarrow(toOR(c0->ptA), toOR(toVector3d(c0->ptA) + dir), .0025, color));
+  handles.push_back(env.drawarrow(toOR(c0->ptA), toOR(toVector3d(c0->ptA) + dir*5), .0025, color));
 }
 
 

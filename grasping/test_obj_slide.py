@@ -14,7 +14,7 @@ def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_targ
       "manip" : manip_name,
       "start_fixed" : True, # i.e., DOF values at first timestep are fixed based on current robot state
     },
-    "sim_params": { "dynamic_obj_names": ["box_0"], "traj_time": 2},
+    "sim_params": { "dynamic_obj_names": ["box_0"], "traj_time": 10},
     "costs" : [
     {
       "type" : "joint_vel", # joint-space velocity cost
@@ -68,7 +68,7 @@ def main():
   table_mid = table_aabb.pos()[:2]
 
   box_center = table_mid - [.5, .4]
-  box_lwh = [0.1, 0.4, 0.2]
+  box_lwh = [0.1, 0.4, 0.15]
   mk.create_box_from_bounds(env, [-box_lwh[0]/2., box_lwh[0]/2., -box_lwh[1]/2., box_lwh[1]/2., -box_lwh[2]/2., box_lwh[2]/2.], name='box_0')
   box = env.GetKinBody('box_0')
   final_box_center = np.array([box_center[0], box_center[1], table_top_z+box_lwh[2]/2.])
@@ -82,7 +82,7 @@ def main():
   ### make straight-line trajectory ###
   traj_len = 20
   start_pt = final_box_center - np.array([.1, 0, .05])
-  final_pt = start_pt + np.array([.2, 0, .2])
+  final_pt = start_pt + np.array([.3, -.1, .2])
   line = mu.linspace2d(start_pt, final_pt, traj_len)
   handles.append(env.drawlinelist(np.array([start_pt,final_pt]),1))
   env.UpdatePublishedBodies()
