@@ -3,6 +3,7 @@ import openravepy as rave
 import trajoptpy.make_kinbodies as mk
 import numpy as np
 import meshes
+from util import *
 
 #import argparse
 #parser = argparse.ArgumentParser()
@@ -18,14 +19,6 @@ EXPLODE_THRESH = 2
 PLOTTING = True
 PLOT_EACH_PUSH = False
 
-def transform_point(hmat, pt):
-  return hmat.dot(np.r_[pt, 1])[:3]
-
-def transform_points(hmat, points):
-  return rave.poseTransformPoints(rave.poseFromMatrix(hmat), points)
-
-def transform_normals(hmat, normals):
-  return normals.dot(np.linalg.inv(hmat[:3,:3]))
 
 def exploded(hmat, orig_hmat):
   return np.linalg.norm(hmat[:3,3] - orig_hmat[:3,3]) > EXPLODE_THRESH
@@ -103,15 +96,18 @@ def run(env, obj_name):
   env.UpdatePublishedBodies()
 
   init_obj_trans = bt_obj.GetTransform()
-  print 'init obj trans', init_obj_trans
 
-
+  result_push_point_local = np.empty((len(sample_points), 3))
+  result_push_dir_local = np.empty((len(sample_points), 3))
   result_obj_trans = np.empty((len(sample_points), 4, 4))
+  result_obj_trans_diff = np.empty((len(sample_points), 4, 4))
   result_exploded = np.empty(len(sample_points), dtype=bool)
   result_toppled = np.empty(len(sample_points), dtype=bool)
   for curr_iter, (sample_pt, sample_n) in enumerate(zip(sample_points, sample_normals)):
     print curr_iter, len(sample_points)
     curr_sample_to_world = link0.GetTransform().dot(geom0.GetTransform())
+    init_obj_trans_for_iteration = bt_obj.GetTransform()
+
     if PLOTTING:
       handles = []
       if PLOT_EACH_PUSH:
@@ -123,6 +119,8 @@ def run(env, obj_name):
 
     pt = transform_point(curr_sample_to_world, sample_pt)
     normal = transform_normals(curr_sample_to_world, sample_n)
+    result_push_point_local[curr_iter,:] = transform_point(np.linalg.inv(init_obj_trans), pt)
+    result_push_dir_local[curr_iter,:] = transform_normals(np.linalg.inv(init_obj_trans), -normal)
 
     # execute push
     line_start_pt, line_end_pt = pt + PUSH_START_DIST*normal, pt - PUSH_END_DIST*normal
@@ -134,13 +132,16 @@ def run(env, obj_name):
     if PLOTTING and PLOT_EACH_PUSH:
       bt_sphere.UpdateRave()
       bt_obj.UpdateRave()
-      print curr_iter, curr_pt, bt_obj.GetTransform()[:3,3]
+      print '%d: point = %s, trans = %s' % (curr_iter, str(sample_pt), str(bt_obj.GetTransform()[:3,3]))
       env.UpdatePublishedBodies()
       raw_input('asdfx')
 
     result_obj_trans[curr_iter,:,:] = bt_obj.GetTransform()
-    result_exploded[curr_iter] = exploded(result_obj_trans[curr_iter,:,:], init_obj_trans)
-    result_toppled[curr_iter] = not result_exploded[curr_iter] and toppled(result_obj_trans[curr_iter,:,:], init_obj_trans)
+    result_obj_trans_diff[curr_iter,:,:] = result_obj_trans[curr_iter,:,:].dot(np.linalg.inv(init_obj_trans_for_iteration))
+    print 'diff', result_obj_trans_diff[curr_iter,:,:]
+
+    result_exploded[curr_iter] = exploded(result_obj_trans[curr_iter,:,:], init_obj_trans_for_iteration)
+    result_toppled[curr_iter] = not result_exploded[curr_iter] and toppled(result_obj_trans[curr_iter,:,:], init_obj_trans_for_iteration)
 
     # reset state to prepare for next push
     bt_sphere.SetTransform(rave.matrixFromPose(np.r_[[1, 0, 0, 0], FAR_POINT]))
@@ -179,7 +180,17 @@ def run(env, obj_name):
     #handles.append(env.drawtrimesh(fn.vertices, fn.indices))
     raw_input('asdf')
 
-  return sample_points, sample_normals, toppled, exploded
+  push_dists = np.repeat(PUSH_END_DIST, len(sample_points))
+  return {
+    'local_push_points': result_push_point_local,
+    'local_push_dirs': result_push_dir_local,
+    'push_dists': push_dists,
+    'obj_init_trans': init_obj_trans,
+    'obj_final_trans': result_obj_trans,
+    'obj_trans_diff': result_obj_trans_diff,
+    'exploded': result_exploded,
+    'toppled': result_toppled,
+  }
 
 def setup_testing_env():
   env = rave.Environment()
@@ -224,7 +235,12 @@ if __name__ == '__main__':
 # clone = env.CloneSelf(rave.CloningOptions.Bodies)
 # clone.StopSimulation()
 
-  points, normals, toppled, exploded = run(env, 'box')
+  results = run(env, 'box')
+
+  import pickle
+  with open('recording.txt', 'w') as f:
+    pickle.dump(results, f)
+    print 'dumped'
 
   if not PLOTTING:
     env.SetViewer('qtcoin')

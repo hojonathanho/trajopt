@@ -20,7 +20,7 @@ def fit_linear(X_Nn, Y_Nm):
   a, residuals, rank, s = np.linalg.lstsq(Z, Y_Nm.reshape((N*m, 1)))
   return a.reshape((m, n))
 
-def create_grid_on_aabb(aabb, density=.02, edge_padding=.005, ignore_z=True):
+def create_grid_on_aabb(aabb, density=.01, edge_padding=.005, ignore_z=True):
   aabb_pos, aabb_extents = aabb.pos(), aabb.extents()
 
   #points = np.empty((num*num*2*(2 if IGNORE_Z else 3), 3))
@@ -121,7 +121,7 @@ class FuncOnMesh(object):
     self.kdtree = ss.KDTree(self.sample_points)
     self.point_vals = np.ones(len(self.sample_points))*default_val
     self.distmat = ss.distance.squareform(ss.distance.pdist(self.sample_points))
-    self.mindist = (distmat + 10*np.eye(len(distmat))*distmat.max()).min()
+    self.mindist = (self.distmat + 10*np.eye(len(self.distmat))*self.distmat.max()).min()
 
   def set_from_samples(self, pts, vals):
     assert len(pts) == len(vals)
@@ -141,7 +141,7 @@ class FuncOnMesh(object):
       vals = np.empty_like(self.point_vals)
       # TODO: only look at plane where the current point lies
       for i in range(len(self.sample_points)):
-        inds = np.nonzero(distmat[i,:] < radius)[0]
+        inds = np.nonzero(self.distmat[i,:] < radius)[0]
         if len(inds) == 0: continue
         vals[i] = (self.point_vals[inds]).sum() # / (1+distmat[i,inds])).sum()
         vals[i] /= len(inds) #(1+distmat[i,inds]).sum()

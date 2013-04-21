@@ -7,6 +7,11 @@ import rec_util
 import trajoptpy
 import json
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--no_dynamics', action='store_true')
+args = parser.parse_args()
+
 def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_target):
   request = {
     "basic_info" : {
@@ -14,16 +19,16 @@ def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_targ
       "manip" : manip_name,
       "start_fixed" : True, # i.e., DOF values at first timestep are fixed based on current robot state
     },
-    "sim_params": { "dynamic_obj_names": ["box_0"], "traj_time": 10},
+#   "sim_params": { "dynamic_obj_names": ["box_0"], "traj_time": 10},
     "costs" : [
     {
       "type" : "joint_vel", # joint-space velocity cost
-      "params": {"coeffs" : [1]} # a list of length one is automatically expanded to a list of length n_dofs
+      "params": {"coeffs" : [.1]} # a list of length one is automatically expanded to a list of length n_dofs
     },
-    {
-      "type": "object_slide",
-      "params": { "object_name": "box_0", "coeffs": [1], "dist_pen": [.025] }
-    },
+#   {
+#     "type": "object_slide",
+#     "params": { "object_name": "box_0", "coeffs": [1], "dist_pen": [.025] }
+#   },
 #   {
 #     "type" : "continuous_collision",
 #     "name" :"cont_coll", # shorten name so printed table will be prettier
@@ -54,6 +59,20 @@ def create_request(n_steps, manip_name, xyz_target, quat_target, init_joint_targ
       "endpoint": init_joint_target.tolist()
     }
   }
+
+  if args.no_dynamics:
+    request['costs'].append({
+      "type" : "continuous_collision",
+      "name" :"cont_coll", # shorten name so printed table will be prettier
+      "params" : { "object_costs": [{'name':'table','coeffs':[0],'dist_pen':[0]}, {'name':'box_0','coeffs':[20],'dist_pen':[.025]}] }
+    })
+  else:
+    request['sim_params'] = { "dynamic_obj_names": ["box_0"], "traj_time": 10}
+    request['costs'].append({
+      "type": "object_slide",
+      "params": { "object_name": "box_0", "coeffs": [1], "dist_pen": [.025] }
+    })
+
   return request
 
 def main():
@@ -68,7 +87,7 @@ def main():
   table_mid = table_aabb.pos()[:2]
 
   box_center = table_mid - [.5, .4]
-  box_lwh = [0.1, 0.4, 0.15]
+  box_lwh = [0.1, 0.4, 0.2]
   mk.create_box_from_bounds(env, [-box_lwh[0]/2., box_lwh[0]/2., -box_lwh[1]/2., box_lwh[1]/2., -box_lwh[2]/2., box_lwh[2]/2.], name='box_0')
   box = env.GetKinBody('box_0')
   final_box_center = np.array([box_center[0], box_center[1], table_top_z+box_lwh[2]/2.])
