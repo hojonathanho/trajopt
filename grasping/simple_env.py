@@ -11,7 +11,8 @@ def mirror_arm_joints(x):
 def create_bare():
   env = rave.Environment()
   env.StopSimulation()
-  env.Load('../data/pr2_table.env.xml')
+  import os; import os.path as osp
+  env.Load(osp.join(osp.dirname(osp.realpath(__file__)), '../data/pr2_table.env.xml'))
   pr2 = env.GetRobot('pr2')
   pr2.SetDOFValues(PR2_LARM_SIDE_POSTURE, pr2.GetManipulator('leftarm').GetArmIndices())
   pr2.SetDOFValues(mirror_arm_joints(PR2_LARM_SIDE_POSTURE), pr2.GetManipulator('rightarm').GetArmIndices())
